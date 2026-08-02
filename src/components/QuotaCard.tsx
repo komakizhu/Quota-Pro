@@ -1,5 +1,5 @@
-import { ArrowClockwise, ArrowDown, ArrowUp, ArrowsInSimple, ArrowsOutSimple, ClockCounterClockwise, CloudSlash, Info, PushPin, PushPinSlash, SignIn, WarningCircle } from "@phosphor-icons/react";
-import { memo, type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowClockwise, ArrowDown, ArrowUp, ArrowsInSimple, ClockCounterClockwise, CloudSlash, Info, PushPin, PushPinSlash, SignIn, WarningCircle } from "@phosphor-icons/react";
+import { memo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { clampPercent, formatDateTime, formatResetDate, formatResetTime, quotaTier } from "../lib/format";
 import { blurProgressSegments } from "../lib/blurSkin";
 import { copy, normalizeLanguage } from "../lib/i18n";
@@ -24,9 +24,8 @@ interface Props {
   onNext: () => void;
   onTogglePin: () => void;
   onLock: () => void;
-  onToggleStayExpanded: () => void;
+  onCollapse: () => void;
   onDrag: () => void;
-  onHover: (hovered: boolean) => void;
   onRefresh?: () => void;
   isConsuming?: boolean;
   notice?: ReactNode;
@@ -95,9 +94,8 @@ export const QuotaCard = memo(function QuotaCard({
   onNext,
   onTogglePin: _onTogglePin,
   onLock,
-  onToggleStayExpanded,
+  onCollapse,
   onDrag,
-  onHover,
   onRefresh,
   isConsuming = false,
   notice = null,
@@ -137,14 +135,11 @@ export const QuotaCard = memo(function QuotaCard({
     <main
       className={`quota-card quota-card--${snapshot.status} quota-card--${tier}${theme ? ` quota-card--theme-${theme}` : ""}${skin === "blur" ? " quota-card--skin-blur" : ""}${skin === "computer" ? " quota-card--skin-computer" : ""}`}
       style={style}
-      onMouseEnter={() => onHover(true)}
-      onMouseLeave={() => onHover(false)}
-      onMouseDown={(event) => { if (event.button === 0) void onDrag(); }}
     >
       <div className="aurora" aria-hidden="true" />
       <span className="sr-only" aria-live="polite">{available && displayPercent !== null ? (displayingWeeklyAsPrimary ? t.weeklyAvailableLabel(displayPercent) : t.availableLabel(displayPercent)) : message}</span>
       {notice ? <div className="operation-notice" role="status">{notice}</div> : null}
-      <header className="card-header">
+      <header className="card-header" onMouseDown={(event) => { if (event.button === 0) void onDrag(); }}>
         <div>
           <p className="eyebrow">{skin === "computer" ? "codex·plus" : `${snapshot.displayName} · ${snapshot.plan ?? t.accountFallback}`}</p>
           {snapshot.status !== "stale" ? <p className="updated">{displayingWeeklyAsPrimary ? t.weeklyShortRemaining : t.shortRemaining}</p> : null}
@@ -154,8 +149,8 @@ export const QuotaCard = memo(function QuotaCard({
             {providerCount > 1 ? <button onClick={onPrevious} aria-label={t.servicePrevious}><ArrowUp /></button> : null}
             {providerCount > 1 ? <button onClick={onNext} aria-label={t.serviceNext}><ArrowDown /></button> : null}
             <span className={`usage-indicator usage-indicator--${indicatorState}`} role="status" aria-label={indicatorLabel} title={indicatorLabel}><i /></span>
-            <button className={preferences.stayExpanded ? "expand-button expand-button--active" : "expand-button"} onClick={onToggleStayExpanded} aria-pressed={preferences.stayExpanded} aria-label={preferences.stayExpanded ? t.keepExpandedOff : t.keepExpandedOn} title={preferences.stayExpanded ? t.keepExpandedOff : t.keepExpandedOn}>
-              {preferences.stayExpanded ? <ArrowsInSimple weight="bold" /> : <ArrowsOutSimple />}
+            <button className="expand-button expand-button--active" onClick={onCollapse} aria-label={t.collapseWidget} title={t.collapseWidget}>
+              <ArrowsInSimple weight="bold" />
             </button>
             <button className={preferences.alwaysOnTop ? "pin-button pin-button--active" : "pin-button"} onClick={onLock} aria-pressed={preferences.alwaysOnTop} aria-label={preferences.alwaysOnTop ? t.pinOff : t.pinOn} title={preferences.alwaysOnTop ? t.pinOff : t.pinOn}>
               {preferences.alwaysOnTop ? <PushPin weight="fill" /> : <PushPinSlash />}
@@ -213,9 +208,11 @@ export const QuotaCard = memo(function QuotaCard({
   );
 });
 
-export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onHover, language = "zh-CN", theme, skin = "default", style }: Pick<Props, "snapshot" | "onDrag" | "onHover" | "theme" | "skin" | "style"> & { language?: Language }) {
+export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, language = "zh-CN", theme, skin = "default", style }: Pick<Props, "snapshot" | "onDrag" | "theme" | "skin" | "style"> & { language?: Language; onExpand: () => void }) {
   const [idle, setIdle] = useState(false);
   const idleTimer = useRef<number | null>(null);
+  const dragCleanup = useRef<(() => void) | null>(null);
+  const didDrag = useRef(false);
   const activeLanguage = normalizeLanguage(language);
   const t = copy[activeLanguage];
   const primary = snapshot.shortWindow ? clampPercent(snapshot.shortWindow.remainingPercent) : null;
@@ -239,13 +236,43 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onHover, lang
     idleTimer.current = window.setTimeout(() => setIdle(true), 2000);
     return () => {
       if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
+      dragCleanup.current?.();
     };
   }, []);
 
   const handleMouseEnter = () => {
     if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
     setIdle(false);
-    onHover(true);
+  };
+
+  const handleMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const start = { x: event.clientX, y: event.clientY };
+    const onMove = (move: MouseEvent) => {
+      if (Math.hypot(move.clientX - start.x, move.clientY - start.y) < 6) return;
+      didDrag.current = true;
+      dragCleanup.current?.();
+      dragCleanup.current = null;
+      void onDrag();
+    };
+    const onUp = () => {
+      dragCleanup.current?.();
+      dragCleanup.current = null;
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp, { once: true });
+    dragCleanup.current = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  };
+
+  const handleClick = () => {
+    if (didDrag.current) {
+      didDrag.current = false;
+      return;
+    }
+    onExpand();
   };
 
   return (
@@ -253,8 +280,15 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onHover, lang
       className={`quota-orb quota-card--${snapshot.status} quota-card--${tier}${theme ? ` quota-orb--theme-${theme}` : ""}${skin === "blur" ? " quota-orb--skin-blur" : ""}${skin === "computer" ? " quota-orb--skin-computer" : ""}${displayingWeeklyAsPrimary ? " quota-orb--weekly" : ""}${idle ? " quota-orb--idle" : ""}`}
       style={style}
       onMouseEnter={handleMouseEnter}
-      onMouseLeave={() => onHover(false)}
-      onMouseDown={(event) => { if (event.button === 0) void onDrag(); }}
+      onMouseLeave={() => {
+        if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
+        idleTimer.current = window.setTimeout(() => setIdle(true), 2000);
+      }}
+      onMouseDown={handleMouseDown}
+      onClick={handleClick}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onExpand(); } }}
+      role="button"
+      tabIndex={0}
       aria-label={available ? (displayingWeeklyAsPrimary ? t.weeklyAvailableLabel(displayPercent!) : t.availableLabel(displayPercent!)) : localizedBackendMessage(snapshot.message, activeLanguage) ?? t.unavailableStatus}
     >
       <div className="aurora" aria-hidden="true" />

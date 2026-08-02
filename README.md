@@ -8,7 +8,8 @@ A lightweight Windows/macOS desktop widget that keeps your Codex quota visible f
 
 - Shows your Codex plan, 5-hour quota, weekly quota, and next reset time in a compact always-on-top widget.
 - Uses clear quota states for healthy, caution, and critical remaining usage.
-- Collapses into a small floating orb when idle, then expands on hover.
+- Uses a manually toggled compact orb and expanded card; hover never changes the window size.
+- Lets you drag the compact orb or expanded header to any screen position and restores the compact anchor after toggling.
 - Indicates whether quota is currently being consumed.
 - Includes persistent expansion, always-on-top controls, and localized tray actions.
 - Falls back to a clearly marked weekly-quota view when the 5-hour window is unavailable.

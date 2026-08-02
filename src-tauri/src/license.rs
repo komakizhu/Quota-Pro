@@ -55,8 +55,18 @@ pub fn request_code_from_raw(raw: &str) -> String {
     hasher.update(DEVICE_SALT.as_bytes());
     hasher.update([0]);
     hasher.update(raw.trim().as_bytes());
-    let digest = hasher.finalize().iter().map(|byte| format!("{byte:02X}")).collect::<String>();
-    format!("QF1-{}-{}-{}-{}", &digest[0..8], &digest[8..16], &digest[16..24], &digest[24..32])
+    let digest = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<String>();
+    format!(
+        "QF1-{}-{}-{}-{}",
+        &digest[0..8],
+        &digest[8..16],
+        &digest[16..24],
+        &digest[24..32]
+    )
 }
 
 pub fn device_request_code() -> Result<String, String> {
@@ -102,7 +112,15 @@ fn platform_device_identifier() -> Result<String, String> {
 #[cfg(any(target_os = "macos", test))]
 fn extract_macos_platform_uuid(text: &str) -> Option<String> {
     text.lines()
-        .find_map(|line| line.contains("IOPlatformUUID").then(|| line).and_then(|line| line.split_once('=').and_then(|(_, value)| value.split('"').nth(1))).map(str::to_owned))
+        .find_map(|line| {
+            line.contains("IOPlatformUUID")
+                .then(|| line)
+                .and_then(|line| {
+                    line.split_once('=')
+                        .and_then(|(_, value)| value.split('"').nth(1))
+                })
+                .map(str::to_owned)
+        })
         .filter(|value| !value.is_empty())
 }
 
@@ -117,18 +135,27 @@ fn public_key(key_id: &str) -> Result<VerifyingKey, String> {
     }
     let encoded = option_env!("QUOTA_FLOAT_LICENSE_PUBLIC_KEY")
         .ok_or_else(|| "license public key is not configured in this build".to_string())?;
-    let bytes = STANDARD.decode(encoded).map_err(|_| "license public key is invalid".to_string())?;
-    let bytes: [u8; 32] = bytes.try_into().map_err(|_| "license public key has an invalid length".to_string())?;
+    let bytes = STANDARD
+        .decode(encoded)
+        .map_err(|_| "license public key is invalid".to_string())?;
+    let bytes: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| "license public key has an invalid length".to_string())?;
     VerifyingKey::from_bytes(&bytes).map_err(|_| "license public key is invalid".to_string())
 }
 
 pub fn parse_and_verify(raw: &str, request_code: &str) -> Result<LicenseDocument, String> {
-    let document: LicenseDocument = serde_json::from_str(raw.trim()).map_err(|_| "license format is invalid".to_string())?;
+    let document: LicenseDocument =
+        serde_json::from_str(raw.trim()).map_err(|_| "license format is invalid".to_string())?;
     let key = public_key(&document.key_id)?;
     verify_document(document, request_code, &key)
 }
 
-fn verify_document(document: LicenseDocument, request_code: &str, key: &VerifyingKey) -> Result<LicenseDocument, String> {
+fn verify_document(
+    document: LicenseDocument,
+    request_code: &str,
+    key: &VerifyingKey,
+) -> Result<LicenseDocument, String> {
     if document.version != LICENSE_VERSION {
         return Err("license version is not supported".into());
     }
@@ -138,8 +165,11 @@ fn verify_document(document: LicenseDocument, request_code: &str, key: &Verifyin
     if document.device_hash != request_code {
         return Err("license is for a different device".into());
     }
-    let signature_bytes = STANDARD.decode(&document.signature).map_err(|_| "license signature is invalid".to_string())?;
-    let signature = Signature::from_slice(&signature_bytes).map_err(|_| "license signature is invalid".to_string())?;
+    let signature_bytes = STANDARD
+        .decode(&document.signature)
+        .map_err(|_| "license signature is invalid".to_string())?;
+    let signature = Signature::from_slice(&signature_bytes)
+        .map_err(|_| "license signature is invalid".to_string())?;
     key.verify(canonical_payload(&document).as_bytes(), &signature)
         .map_err(|_| "license signature could not be verified".to_string())?;
     Ok(document)
@@ -162,19 +192,31 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_can_generate_a_device_request_code() {
-        let code = device_request_code().expect("Windows MachineGuid should be readable by a standard user");
+        let code = device_request_code()
+            .expect("Windows MachineGuid should be readable by a standard user");
         assert!(code.starts_with("QF1-"));
         assert_eq!(code.len(), 39);
     }
 
     #[test]
     fn parses_macos_platform_uuid_output() {
-        assert_eq!(extract_macos_platform_uuid("  | |   \"IOPlatformUUID\" = \"ABC-123\"\n"), Some("ABC-123".into()));
+        assert_eq!(
+            extract_macos_platform_uuid("  | |   \"IOPlatformUUID\" = \"ABC-123\"\n"),
+            Some("ABC-123".into())
+        );
     }
 
     #[test]
     fn canonical_payload_excludes_signature() {
-        let document = LicenseDocument { version: 1, skin_id: BLUR_SKIN_ID.into(), device_hash: "QF1-TEST".into(), issued_at: "2026-01-01T00:00:00Z".into(), license_id: "license-1".into(), key_id: "supporter-v1".into(), signature: "ignored".into() };
+        let document = LicenseDocument {
+            version: 1,
+            skin_id: BLUR_SKIN_ID.into(),
+            device_hash: "QF1-TEST".into(),
+            issued_at: "2026-01-01T00:00:00Z".into(),
+            license_id: "license-1".into(),
+            key_id: "supporter-v1".into(),
+            signature: "ignored".into(),
+        };
         assert!(!canonical_payload(&document).contains("ignored"));
     }
 
@@ -182,12 +224,25 @@ mod tests {
     fn signed_license_rejects_tampering_and_other_devices() {
         let key = SigningKey::from_bytes(&[7; 32]);
         let request_code = request_code_from_raw("same-machine");
-        let mut document = LicenseDocument { version: 1, skin_id: BLUR_SKIN_ID.into(), device_hash: request_code.clone(), issued_at: "2026-01-01T00:00:00Z".into(), license_id: "license-1".into(), key_id: "supporter-v1".into(), signature: String::new() };
-        document.signature = STANDARD.encode(key.sign(canonical_payload(&document).as_bytes()).to_bytes());
+        let mut document = LicenseDocument {
+            version: 1,
+            skin_id: BLUR_SKIN_ID.into(),
+            device_hash: request_code.clone(),
+            issued_at: "2026-01-01T00:00:00Z".into(),
+            license_id: "license-1".into(),
+            key_id: "supporter-v1".into(),
+            signature: String::new(),
+        };
+        document.signature =
+            STANDARD.encode(key.sign(canonical_payload(&document).as_bytes()).to_bytes());
         assert!(verify_document(document.clone(), &request_code, &key.verifying_key()).is_ok());
-        assert!(verify_document(document.clone(), &request_code_from_raw("other-machine"), &key.verifying_key()).is_err());
+        assert!(verify_document(
+            document.clone(),
+            &request_code_from_raw("other-machine"),
+            &key.verifying_key()
+        )
+        .is_err());
         document.skin_id = "other".into();
         assert!(verify_document(document, &request_code, &key.verifying_key()).is_err());
     }
-
 }

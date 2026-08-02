@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuotaCard, QuotaOrb } from "./components/QuotaCard";
-import { fetchSnapshots, getPreferences, getSupporterStatus, listenDesktopEvents, setAlwaysOnTop, setWidgetExpanded, startDragging, syncWidgetAppearance, updatePreferences } from "./lib/bridge";
+import { fetchSnapshots, getPreferences, getSupporterStatus, listenDesktopEvents, setAlwaysOnTop, setWidgetMode, startDragging, syncWidgetAppearance, updatePreferences } from "./lib/bridge";
 import { needsFastRefresh, quotaTier } from "./lib/format";
 import { checkForAppUpdate, openReleasePage } from "./lib/appUpdate";
 import { copy, normalizeLanguage } from "./lib/i18n";
 import { mergeSnapshots } from "./lib/snapshots";
 import { DESKTOP_PALETTES } from "./lib/desktopPalette";
-import type { ProviderSnapshot, WidgetPreferences, WidgetSkin, WidgetTheme } from "./types";
+import type { ProviderSnapshot, WidgetMode, WidgetPreferences, WidgetSkin, WidgetTheme } from "./types";
 
-const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, stayExpanded: false, pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
 const INITIAL_SNAPSHOT: ProviderSnapshot = {
   provider: "codex",
   displayName: "CODEX",
@@ -26,8 +26,6 @@ export default function App() {
   const [snapshots, setSnapshots] = useState<ProviderSnapshot[]>([]);
   const [preferences, setPreferences] = useState(DEFAULT_PREFS);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [hovered, setHovered] = useState(false);
-  const [compact, setCompact] = useState(true);
   const [consumingProviders, setConsumingProviders] = useState<Set<string>>(() => new Set());
   const [operationError, setOperationError] = useState<string | null>(null);
   const [showUpdateFallback, setShowUpdateFallback] = useState(false);
@@ -35,8 +33,6 @@ export default function App() {
   const failures = useRef(0);
   const previousPrimary = useRef(new Map<string, number>());
   const consumptionTimers = useRef(new Map<string, number>());
-  const collapseTimer = useRef<number | null>(null);
-  const hoverSequence = useRef(0);
   const language = normalizeLanguage(preferences.language);
   const t = copy[language];
   const operation = language === "zh-CN" ? {
@@ -122,6 +118,13 @@ export default function App() {
     }
   }, []);
 
+  const normalizePreferences = useCallback((value: Partial<WidgetPreferences> & { stayExpanded?: boolean }): WidgetPreferences => ({
+    ...DEFAULT_PREFS,
+    ...value,
+    widgetMode: value.widgetMode ?? (value.stayExpanded ? "expanded" : "compact"),
+    language: normalizeLanguage(value.language),
+  }), []);
+
   useEffect(() => {
     void refresh(true);
     void (async () => {
@@ -135,23 +138,24 @@ export default function App() {
         await new Promise((resolve) => window.setTimeout(resolve, 120));
         return getPreferences().catch(() => DEFAULT_PREFS);
       });
-      setPreferences({ ...DEFAULT_PREFS, ...value, language: normalizeLanguage(value.language) });
+      const normalized = normalizePreferences(value);
+      setPreferences(normalized);
+      await setWidgetMode(normalized.widgetMode);
     })().catch(() => setPreferences(DEFAULT_PREFS));
     return () => {
       for (const timer of consumptionTimers.current.values()) window.clearTimeout(timer);
       consumptionTimers.current.clear();
-      if (collapseTimer.current !== null) window.clearTimeout(collapseTimer.current);
     };
-  }, [refresh]);
+  }, [normalizePreferences, refresh]);
 
   useEffect(() => {
     let cancelled = false;
     let cleanup: () => void = () => {};
-    void listenDesktopEvents({ onPreferences: (value) => setPreferences({ ...DEFAULT_PREFS, ...value, language: normalizeLanguage(value.language) }), onRefresh: () => void refresh(true), onUpdate: () => checkUpdate(true) }).then((value) => {
+    void listenDesktopEvents({ onPreferences: (value) => setPreferences(normalizePreferences(value)), onRefresh: () => void refresh(true), onUpdate: () => checkUpdate(true) }).then((value) => {
       if (cancelled) value(); else cleanup = value;
     }).catch(() => setOperationError(operation.listenerFailed));
     return () => { cancelled = true; cleanup(); };
-  }, [checkUpdate, operation.listenerFailed, refresh]);
+  }, [checkUpdate, normalizePreferences, operation.listenerFailed, refresh]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => checkUpdate(false), 12_000);
@@ -180,10 +184,10 @@ export default function App() {
   }, [refresh]);
 
   useEffect(() => {
-    if (hovered || preferences.pinnedProvider || snapshots.length < 2) return;
+    if (preferences.pinnedProvider || snapshots.length < 2) return;
     const id = window.setInterval(() => setActiveIndex((value) => (value + 1) % snapshots.length), preferences.autoRotateSeconds * 1000);
     return () => window.clearInterval(id);
-  }, [hovered, preferences.autoRotateSeconds, preferences.pinnedProvider, snapshots.length]);
+  }, [preferences.autoRotateSeconds, preferences.pinnedProvider, snapshots.length]);
 
   const current = preferences.pinnedProvider
     ? snapshots.find((item) => item.provider === preferences.pinnedProvider) ?? snapshots[0] ?? INITIAL_SNAPSHOT
@@ -206,41 +210,21 @@ export default function App() {
     void updatePreferences(next).catch(() => { setPreferences(previous); setOperationError(operation.settingsFailed); });
   }, [operation.settingsFailed, preferences]);
 
-  const handleHover = useCallback((value: boolean) => {
-    if (collapseTimer.current !== null) {
-      window.clearTimeout(collapseTimer.current);
-      collapseTimer.current = null;
+  const changeWidgetMode = useCallback(async (mode: WidgetMode) => {
+    const previous = preferences;
+    setPreferences({ ...preferences, widgetMode: mode });
+    setOperationError(null);
+    try {
+      const saved = await setWidgetMode(mode);
+      if (saved) setPreferences(normalizePreferences(saved));
+    } catch {
+      setPreferences(previous);
+      setOperationError(mode === "expanded" ? operation.expandFailed : operation.collapseFailed);
     }
-    setHovered(value);
-    if (!value && preferences.stayExpanded) return;
-    if (value) void refresh(true);
-    if (value) {
-      const sequence = ++hoverSequence.current;
-      void setWidgetExpanded(true)
-        .then(() => { if (hoverSequence.current === sequence) setCompact(false); })
-        .catch(() => {
-          setCompact(false);
-          setOperationError(operation.expandFailed);
-        });
-      return;
-    }
-    const sequence = ++hoverSequence.current;
-    collapseTimer.current = window.setTimeout(() => {
-      if (hoverSequence.current !== sequence) return;
-      setCompact(true);
-      void setWidgetExpanded(false).catch(() => setOperationError(operation.collapseFailed));
-    }, 180);
-  }, [operation.collapseFailed, operation.expandFailed, preferences.stayExpanded, refresh]);
+  }, [normalizePreferences, operation.collapseFailed, operation.expandFailed, preferences]);
 
-  useEffect(() => {
-    if (!preferences.stayExpanded) return;
-    if (collapseTimer.current !== null) window.clearTimeout(collapseTimer.current);
-    setCompact(false);
-    void setWidgetExpanded(true).catch(() => setOperationError(operation.expandFailed));
-  }, [operation.expandFailed, preferences.stayExpanded]);
-
-  if (compact) {
-    return <QuotaOrb snapshot={current} language={language} onDrag={() => startDragging()} onHover={handleHover} theme={theme} skin={skin} style={cardStyle} />;
+  if (preferences.widgetMode === "compact") {
+    return <QuotaOrb snapshot={current} language={language} onExpand={() => { void refresh(true); void changeWidgetMode("expanded"); }} onDrag={() => startDragging()} theme={theme} skin={skin} style={cardStyle} />;
   }
 
   return (
@@ -251,10 +235,9 @@ export default function App() {
       onPrevious={() => setActiveIndex((value) => (value - 1 + snapshots.length) % snapshots.length)}
       onNext={() => setActiveIndex((value) => (value + 1) % snapshots.length)}
       onTogglePin={() => savePreferences({ ...preferences, pinnedProvider: preferences.pinnedProvider ? null : current.provider })}
-      onToggleStayExpanded={() => savePreferences({ ...preferences, stayExpanded: !preferences.stayExpanded })}
+      onCollapse={() => { void changeWidgetMode("compact"); }}
       onLock={() => { setOperationError(null); void setAlwaysOnTop(!preferences.alwaysOnTop).then((value) => setPreferences({ ...DEFAULT_PREFS, ...value, language: normalizeLanguage(value.language) })).catch(() => setOperationError(operation.alwaysOnTopFailed)); }}
       onDrag={() => startDragging()}
-      onHover={handleHover}
       onRefresh={() => refresh(true)}
       isConsuming={consumingProviders.has(current.provider)}
       theme={theme}

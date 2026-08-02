@@ -1,6 +1,6 @@
-import type { ProviderSnapshot, SupporterStatus, WidgetPreferences, WidgetSkin } from "../types";
+import type { ProviderSnapshot, SupporterStatus, WidgetMode, WidgetPreferences, WidgetSkin } from "../types";
 
-const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, stayExpanded: false, pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
 
 const mockSnapshot: ProviderSnapshot = {
   provider: "codex",
@@ -15,11 +15,11 @@ const mockSnapshot: ProviderSnapshot = {
   message: null,
 };
 
-let widgetTransition: Promise<void> = Promise.resolve();
+let widgetTransition: Promise<unknown> = Promise.resolve();
 
-function enqueueWidgetTransition(operation: () => Promise<void>): Promise<void> {
+function enqueueWidgetTransition<T>(operation: () => Promise<T>): Promise<T> {
   const next = widgetTransition.then(operation, operation);
-  widgetTransition = next.catch(() => undefined);
+  widgetTransition = next.then(() => undefined, () => undefined);
   return next;
 }
 
@@ -108,21 +108,17 @@ export async function startDragging(): Promise<void> {
   }, 80);
 }
 
-export function setWidgetExpanded(expanded: boolean): Promise<void> {
-  if (!isTauri()) return Promise.resolve();
+export function setWidgetMode(mode: WidgetMode): Promise<WidgetPreferences | undefined> {
+  if (!isTauri()) return Promise.resolve({ ...defaultPreferences, widgetMode: mode });
   return enqueueWidgetTransition(async () => {
     const { invoke } = await import("@tauri-apps/api/core");
-    if (!expanded) {
-      await invoke("collapse_widget");
-      return;
-    }
     const { currentMonitor } = await import("@tauri-apps/api/window");
     const monitor = await currentMonitor().catch(() => null);
     const workArea = monitor ? {
       position: { x: monitor.workArea.position.x, y: monitor.workArea.position.y },
       size: { width: monitor.workArea.size.width, height: monitor.workArea.size.height },
     } : null;
-    await invoke("expand_widget", { workArea });
+    return invoke<WidgetPreferences>("set_widget_mode", { mode, workArea });
   });
 }
 

@@ -4,6 +4,7 @@ export type Language = "zh-CN" | "en";
 export type WidgetTheme = "light" | "dark";
 export type AppearancePreference = "system" | WidgetTheme;
 export type WidgetSkin = "default" | "blur" | "computer";
+export type WidgetMode = "compact" | "expanded";
 
 export interface SupporterStatus {
   requestCode: string;
@@ -37,7 +38,7 @@ export interface ProviderSnapshot {
 export interface WidgetPreferences {
   locked: boolean;
   alwaysOnTop: boolean;
-  stayExpanded: boolean;
+  widgetMode: WidgetMode;
   pinnedProvider: ProviderId | null;
   autoRotateSeconds: number;
   language: Language;

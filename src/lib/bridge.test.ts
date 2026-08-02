@@ -22,22 +22,23 @@ beforeEach(() => {
 });
 
 describe("widget transitions", () => {
-  it("passes the monitor work area to the Rust expansion command", async () => {
-    const { setWidgetExpanded } = await import("./bridge");
-    await setWidgetExpanded(true);
-    expect(api.invoke).toHaveBeenCalledWith("expand_widget", {
+  it("passes the requested manual mode and monitor work area to Rust", async () => {
+    const { setWidgetMode } = await import("./bridge");
+    await setWidgetMode("expanded");
+    expect(api.invoke).toHaveBeenCalledWith("set_widget_mode", {
+      mode: "expanded",
       workArea: { position: { x: 0, y: 0 }, size: { width: 1920, height: 1040 } },
     });
   });
 
-  it("serializes rapid expand and collapse requests", async () => {
-    const { setWidgetExpanded } = await import("./bridge");
-    await Promise.all([setWidgetExpanded(true), setWidgetExpanded(false)]);
+  it("serializes rapid manual mode changes", async () => {
+    const { setWidgetMode } = await import("./bridge");
+    await Promise.all([setWidgetMode("expanded"), setWidgetMode("compact")]);
     expect(api.calls).toEqual([
-      "start:expand_widget",
-      "end:expand_widget",
-      "start:collapse_widget",
-      "end:collapse_widget",
+      "start:set_widget_mode",
+      "end:set_widget_mode",
+      "start:set_widget_mode",
+      "end:set_widget_mode",
     ]);
   });
 });

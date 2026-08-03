@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { QuotaCard, QuotaOrb } from "./components/QuotaCard";
-import { fetchSnapshots, getPreferences, getSupporterStatus, listenDesktopEvents, setAlwaysOnTop, setWidgetMode, startDragging, syncWidgetAppearance, updatePreferences } from "./lib/bridge";
+import { beginWidgetResize, cancelWidgetResize, fetchSnapshots, finishWidgetResize, getPreferences, getSupporterStatus, listenDesktopEvents, previewWidgetResize, setAlwaysOnTop, setWidgetMode, startDragging, syncWidgetAppearance, updatePreferences } from "./lib/bridge";
 import { needsFastRefresh, quotaTier } from "./lib/format";
 import { checkForAppUpdate, openReleasePage } from "./lib/appUpdate";
 import { copy, normalizeLanguage } from "./lib/i18n";
 import { mergeSnapshots } from "./lib/snapshots";
 import { DESKTOP_PALETTES } from "./lib/desktopPalette";
+import type { ResizeEdge } from "./lib/resize";
 import type { ProviderSnapshot, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin, WidgetTheme } from "./types";
 
-const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
-const WIDGET_SCALE: Record<WidgetSize, number> = { small: 0.84, medium: 1, large: 1.16 };
-const COMPUTER_ORB_SCALE: Record<WidgetSize, number> = { small: 0.9444, medium: 1.11, large: 1.2778 };
-const COMPUTER_ORB_MARGIN: Record<WidgetSize, string> = { small: "-2px", medium: "4px", large: "10px" };
+const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const DEFAULT_COMPACT_SIZE = 72;
+const DEFAULT_EXPANDED_SIZE = 306;
+const COMPACT_MIN_SIZE = 48;
+const COMPACT_MAX_SIZE = 144;
+const EXPANDED_MIN_SIZE = 220;
+const EXPANDED_MAX_SIZE = 460;
+const PRESET_FACTOR: Record<Exclude<WidgetSize, "custom">, number> = { small: 0.84, medium: 1, large: 1.16 };
 const INITIAL_SNAPSHOT: ProviderSnapshot = {
   provider: "codex",
   displayName: "CODEX",
@@ -44,6 +49,7 @@ export default function App() {
     alwaysOnTopFailed: "置顶状态切换失败。",
     expandFailed: "组件展开失败。",
     collapseFailed: "组件收起失败。",
+    resizeFailed: "组件尺寸保存失败，已恢复之前的大小。",
     releaseOpenFailed: "无法打开 GitHub Releases。",
   } : {
     listenerFailed: "Desktop event listener failed to start.",
@@ -51,6 +57,7 @@ export default function App() {
     alwaysOnTopFailed: "Always-on-top toggle failed.",
     expandFailed: "Widget expand failed.",
     collapseFailed: "Widget collapse failed.",
+    resizeFailed: "Widget size could not be saved. Previous size restored.",
     releaseOpenFailed: "Could not open GitHub Releases.",
   };
   const theme: WidgetTheme = preferences.appearance === "system" ? (systemDark ? "dark" : "light") : preferences.appearance;
@@ -121,13 +128,25 @@ export default function App() {
     }
   }, []);
 
-  const normalizePreferences = useCallback((value: Partial<WidgetPreferences> & { stayExpanded?: boolean }): WidgetPreferences => ({
-    ...DEFAULT_PREFS,
-    ...value,
-    widgetMode: value.widgetMode ?? (value.stayExpanded ? "expanded" : "compact"),
-    widgetSize: value.widgetSize === "small" || value.widgetSize === "large" || value.widgetSize === "medium" ? value.widgetSize : "medium",
-    language: normalizeLanguage(value.language),
-  }), []);
+  const normalizePreferences = useCallback((value: Partial<WidgetPreferences> & { stayExpanded?: boolean }): WidgetPreferences => {
+    const widgetSize = value.widgetSize === "small" || value.widgetSize === "large" || value.widgetSize === "custom" || value.widgetSize === "medium" ? value.widgetSize : "medium";
+    const factor = widgetSize === "custom" ? 1 : PRESET_FACTOR[widgetSize];
+    const compactSize = Number.isFinite(value.compactSize) && (value.compactSize ?? 0) > 0
+      ? value.compactSize!
+      : DEFAULT_COMPACT_SIZE * factor;
+    const expandedSize = Number.isFinite(value.expandedSize) && (value.expandedSize ?? 0) > 0
+      ? value.expandedSize!
+      : DEFAULT_EXPANDED_SIZE * factor;
+    return {
+      ...DEFAULT_PREFS,
+      ...value,
+      widgetMode: value.widgetMode === "expanded" || value.widgetMode === "compact" ? value.widgetMode : (value.stayExpanded ? "expanded" : "compact"),
+      widgetSize,
+      compactSize: Math.min(COMPACT_MAX_SIZE, Math.max(COMPACT_MIN_SIZE, compactSize)),
+      expandedSize: Math.min(EXPANDED_MAX_SIZE, Math.max(EXPANDED_MIN_SIZE, expandedSize)),
+      language: normalizeLanguage(value.language),
+    };
+  }, []);
 
   useEffect(() => {
     void refresh(true);
@@ -207,9 +226,9 @@ export default function App() {
   // one another through CSS defaults or preview state.
   const cardStyle = {
     ...(paletteName ? DESKTOP_PALETTES[theme][paletteName] : {}),
-    "--widget-scale": String(WIDGET_SCALE[preferences.widgetSize]),
-    "--computer-orb-scale": String(COMPUTER_ORB_SCALE[preferences.widgetSize]),
-    "--computer-orb-margin": COMPUTER_ORB_MARGIN[preferences.widgetSize],
+    "--widget-scale": String((preferences.widgetMode === "compact" ? preferences.compactSize : preferences.expandedSize) / (preferences.widgetMode === "compact" ? DEFAULT_COMPACT_SIZE : DEFAULT_EXPANDED_SIZE)),
+    "--computer-orb-scale": String((preferences.compactSize + 8) / 72),
+    "--computer-orb-margin": `${(preferences.compactSize - 64) / 2}px`,
   } as CSSProperties;
 
   const savePreferences = useCallback((next: WidgetPreferences) => {
@@ -232,8 +251,24 @@ export default function App() {
     }
   }, [normalizePreferences, operation.collapseFailed, operation.expandFailed, preferences]);
 
+  const beginResize = useCallback((mode: WidgetMode, edge: ResizeEdge) => beginWidgetResize(mode, edge), []);
+  const previewResize = useCallback((size: number) => previewWidgetResize(size), []);
+  const commitResize = useCallback(async (mode: WidgetMode, size: number) => {
+    const previous = preferences;
+    try {
+      const saved = await finishWidgetResize(mode, size);
+      if (saved) setPreferences(normalizePreferences(saved));
+      setOperationError(null);
+    } catch (error) {
+      await cancelWidgetResize().catch(() => undefined);
+      setPreferences(previous);
+      setOperationError(operation.resizeFailed);
+      throw error;
+    }
+  }, [normalizePreferences, operation.resizeFailed, preferences]);
+
   if (preferences.widgetMode === "compact") {
-    return <QuotaOrb snapshot={current} language={language} onExpand={() => { void refresh(true); void changeWidgetMode("expanded"); }} onDrag={() => startDragging()} theme={theme} skin={skin} style={cardStyle} />;
+    return <QuotaOrb snapshot={current} language={language} onExpand={() => { void refresh(true); void changeWidgetMode("expanded"); }} onDrag={() => startDragging()} onResizeStart={(edge) => beginResize("compact", edge)} onResizePreview={previewResize} onResizeCommit={(size) => commitResize("compact", size)} onResizeCancel={cancelWidgetResize} resizeSize={preferences.compactSize} theme={theme} skin={skin} style={cardStyle} />;
   }
 
   return (
@@ -247,6 +282,11 @@ export default function App() {
       onCollapse={() => { void changeWidgetMode("compact"); }}
       onLock={() => { setOperationError(null); void setAlwaysOnTop(!preferences.alwaysOnTop).then((value) => setPreferences({ ...DEFAULT_PREFS, ...value, language: normalizeLanguage(value.language) })).catch(() => setOperationError(operation.alwaysOnTopFailed)); }}
       onDrag={() => startDragging()}
+      onResizeStart={(edge) => beginResize("expanded", edge)}
+      onResizePreview={previewResize}
+      onResizeCommit={(size) => commitResize("expanded", size)}
+      onResizeCancel={cancelWidgetResize}
+      resizeSize={preferences.expandedSize}
       onRefresh={() => refresh(true)}
       isConsuming={consumingProviders.has(current.provider)}
       theme={theme}

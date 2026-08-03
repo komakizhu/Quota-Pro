@@ -50,4 +50,25 @@ describe("widget transitions", () => {
       workArea: { position: { x: 0, y: 0 }, size: { width: 1920, height: 1040 } },
     });
   });
+
+  it("starts and commits a resize session without coupling preview writes to persistence", async () => {
+    const { beginWidgetResize, finishWidgetResize, previewWidgetResize } = await import("./bridge");
+    await beginWidgetResize("compact", "se");
+    previewWidgetResize(96);
+    await finishWidgetResize("compact", 96);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(api.invoke).toHaveBeenCalledWith("begin_widget_resize", {
+      mode: "compact",
+      edge: "se",
+      workArea: { position: { x: 0, y: 0 }, size: { width: 1920, height: 1040 } },
+    });
+    expect(api.invoke).toHaveBeenCalledWith("preview_widget_resize", {
+      size: 96,
+      workArea: { position: { x: 0, y: 0 }, size: { width: 1920, height: 1040 } },
+    });
+    expect(api.invoke).toHaveBeenCalledWith("finish_widget_resize", {
+      size: 96,
+      workArea: { position: { x: 0, y: 0 }, size: { width: 1920, height: 1040 } },
+    });
+  });
 });

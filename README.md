@@ -9,8 +9,8 @@ A lightweight Windows/macOS desktop widget that keeps your Codex quota visible f
 - Shows your Codex plan, 5-hour quota, weekly quota, and next reset time in a compact always-on-top widget.
 - Uses clear quota states for healthy, caution, and critical remaining usage.
 - Uses a padded macOS app icon so the Dock artwork matches native icon proportions.
-- Offers small, medium, and large widget size presets from the tray menu; the selected size is restored on restart.
-- Uses a manually toggled compact orb and expanded card; hover never changes the window size.
+- Offers small, medium, and large tray presets plus direct edge/corner resizing. Compact (48–144px) and expanded (220–460px) dimensions are saved independently and restored on restart.
+- Uses a manually toggled compact orb and expanded card; hover never changes the window size. Move to any edge or corner to reveal the native resize cursor, then drag to resize while keeping the opposite edge fixed.
 - Lets you drag the compact orb or expanded header to any screen position and restores the compact anchor after toggling.
 - Indicates whether quota is currently being consumed.
 - Includes persistent expansion, always-on-top controls, and localized tray actions.

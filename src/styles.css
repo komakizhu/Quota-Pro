@@ -51,6 +51,12 @@ button { font: inherit; }
 }
 .quota-card { color: #17191f; }
 .quota-card { animation: panel-in .16s ease-out both; transform: scale(var(--widget-scale)); transform-origin: top left; }
+.quota-resize--n, .quota-resize--s { cursor: ns-resize !important; }
+.quota-resize--e, .quota-resize--w { cursor: ew-resize !important; }
+.quota-resize--ne, .quota-resize--sw { cursor: nesw-resize !important; }
+.quota-resize--nw, .quota-resize--se { cursor: nwse-resize !important; }
+.quota-resize--n, .quota-resize--s, .quota-resize--e, .quota-resize--w, .quota-resize--ne, .quota-resize--nw, .quota-resize--se, .quota-resize--sw { outline: 1px solid color-mix(in srgb, #5a90d6 24%, transparent); outline-offset: -1px; }
+.quota-card.is-resizing, .quota-orb.is-resizing { outline: 1px solid color-mix(in srgb, #5a90d6 65%, transparent); outline-offset: -1px; }
 @keyframes panel-in { from { opacity: .88; } to { opacity: 1; } }
 /* State palettes live only in src/lib/desktopPalette.ts. The application
    supplies the active theme/state variables at runtime; this stylesheet owns
@@ -290,6 +296,14 @@ button { font: inherit; }
 .quota-orb--skin-computer .aurora { display: none; }
 .computer-orb-base { position: absolute; inset: 0; z-index: 0; width: 72px; height: 72px; pointer-events: none; }
 .computer-orb-screen { position: absolute; z-index: 1; top: 12.4365px; left: 14.3999px; width: 43.2px; height: 33.3818px; pointer-events: none; }
+.quota-card.quota-resize--n, .quota-orb.quota-resize--n, .quota-card.quota-resize--n .card-header { cursor: ns-resize !important; }
+.quota-card.quota-resize--s, .quota-orb.quota-resize--s, .quota-card.quota-resize--s .card-header { cursor: ns-resize !important; }
+.quota-card.quota-resize--e, .quota-orb.quota-resize--e, .quota-card.quota-resize--e .card-header { cursor: ew-resize !important; }
+.quota-card.quota-resize--w, .quota-orb.quota-resize--w, .quota-card.quota-resize--w .card-header { cursor: ew-resize !important; }
+.quota-card.quota-resize--ne, .quota-orb.quota-resize--ne, .quota-card.quota-resize--ne .card-header { cursor: nesw-resize !important; }
+.quota-card.quota-resize--sw, .quota-orb.quota-resize--sw, .quota-card.quota-resize--sw .card-header { cursor: nesw-resize !important; }
+.quota-card.quota-resize--nw, .quota-orb.quota-resize--nw, .quota-card.quota-resize--nw .card-header { cursor: nwse-resize !important; }
+.quota-card.quota-resize--se, .quota-orb.quota-resize--se, .quota-card.quota-resize--se .card-header { cursor: nwse-resize !important; }
 .quota-orb--skin-computer .orb-metric,
 .quota-orb--skin-computer .orb-unavailable { position: absolute; z-index: 2; top: 12.4365px; left: 14.3999px; width: 43.2px; height: 33.3818px; display: grid; place-items: center; margin: 0; border: 0; border-radius: 0; color: #244f7b; background: transparent; box-shadow: none; }
 .quota-orb--skin-computer .orb-metric span { font-family: "Computer Bitcount", monospace; font-size: 27px; font-weight: 400; line-height: .72; letter-spacing: .5px; transform: translateY(3px); }

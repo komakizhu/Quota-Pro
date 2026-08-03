@@ -50,6 +50,10 @@ pub struct WidgetPreferences {
     pub widget_mode: String,
     #[serde(default = "default_widget_size")]
     pub widget_size: String,
+    #[serde(default = "default_missing_size")]
+    pub compact_size: f64,
+    #[serde(default = "default_missing_size")]
+    pub expanded_size: f64,
     #[serde(default, skip_serializing)]
     pub stay_expanded: bool,
     pub pinned_provider: Option<String>,
@@ -89,6 +93,23 @@ fn default_skin() -> String {
 fn default_widget_size() -> String {
     "medium".into()
 }
+fn default_missing_size() -> f64 {
+    0.0
+}
+fn default_compact_size() -> f64 {
+    72.0
+}
+fn default_expanded_size() -> f64 {
+    306.0
+}
+
+fn preset_factor(widget_size: &str) -> f64 {
+    match widget_size {
+        "small" => 0.84,
+        "large" => 1.16,
+        _ => 1.0,
+    }
+}
 
 impl Default for WidgetPreferences {
     fn default() -> Self {
@@ -97,6 +118,8 @@ impl Default for WidgetPreferences {
             always_on_top: true,
             widget_mode: "compact".into(),
             widget_size: default_widget_size(),
+            compact_size: default_compact_size(),
+            expanded_size: default_expanded_size(),
             stay_expanded: false,
             pinned_provider: None,
             auto_rotate_seconds: 12,
@@ -123,9 +146,21 @@ impl WidgetPreferences {
             }
             .into();
         }
-        if !matches!(self.widget_size.as_str(), "small" | "medium" | "large") {
+        if !matches!(
+            self.widget_size.as_str(),
+            "small" | "medium" | "large" | "custom"
+        ) {
             self.widget_size = default_widget_size();
         }
+        let factor = preset_factor(&self.widget_size);
+        if !self.compact_size.is_finite() || self.compact_size <= 0.0 {
+            self.compact_size = default_compact_size() * factor;
+        }
+        if !self.expanded_size.is_finite() || self.expanded_size <= 0.0 {
+            self.expanded_size = default_expanded_size() * factor;
+        }
+        self.compact_size = self.compact_size.clamp(48.0, 144.0);
+        self.expanded_size = self.expanded_size.clamp(220.0, 460.0);
         self.stay_expanded = false;
         self.auto_rotate_seconds = self.auto_rotate_seconds.clamp(5, 300);
         if self.pinned_provider.as_deref() != Some("codex") {
@@ -175,6 +210,7 @@ impl WidgetPreferences {
 #[cfg(test)]
 mod tests {
     use super::WidgetPreferences;
+    use serde_json::json;
 
     #[test]
     fn legacy_persistent_expansion_migrates_to_widget_mode() {
@@ -198,5 +234,43 @@ mod tests {
         let mut preferences = WidgetPreferences::default();
         preferences.widget_size = "invalid".into();
         assert_eq!(preferences.normalized().widget_size, "medium");
+    }
+
+    #[test]
+    fn legacy_widget_size_migrates_to_independent_dimensions() {
+        let mut preferences = WidgetPreferences::default();
+        preferences.widget_size = "large".into();
+        preferences.compact_size = 0.0;
+        preferences.expanded_size = 0.0;
+        let normalized = preferences.normalized();
+        assert_eq!(normalized.compact_size, 72.0 * 1.16);
+        assert_eq!(normalized.expanded_size, 306.0 * 1.16);
+    }
+
+    #[test]
+    fn serde_migration_fills_dimensions_for_old_preferences() {
+        let raw = json!({
+            "locked": false,
+            "widgetSize": "small",
+            "pinnedProvider": null,
+            "autoRotateSeconds": 12
+        });
+        let parsed: WidgetPreferences =
+            serde_json::from_value(raw).expect("legacy preferences should deserialize");
+        let normalized = parsed.normalized();
+        assert_eq!(normalized.compact_size, 72.0 * 0.84);
+        assert_eq!(normalized.expanded_size, 306.0 * 0.84);
+    }
+
+    #[test]
+    fn custom_dimensions_are_clamped_and_custom_marker_is_preserved() {
+        let mut preferences = WidgetPreferences::default();
+        preferences.widget_size = "custom".into();
+        preferences.compact_size = 2.0;
+        preferences.expanded_size = 999.0;
+        let normalized = preferences.normalized();
+        assert_eq!(normalized.widget_size, "custom");
+        assert_eq!(normalized.compact_size, 48.0);
+        assert_eq!(normalized.expanded_size, 460.0);
     }
 }

@@ -1,6 +1,7 @@
 import type { ProviderSnapshot, SupporterStatus, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin } from "../types";
+import type { ResizeEdge } from "./resize";
 
-const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
 
 const mockSnapshot: ProviderSnapshot = {
   provider: "codex",
@@ -16,11 +17,23 @@ const mockSnapshot: ProviderSnapshot = {
 };
 
 let widgetTransition: Promise<unknown> = Promise.resolve();
+let resizePreviewLatest: number | null = null;
+let resizePreviewRunning = false;
+let resizePreviewDrain: Promise<void> = Promise.resolve();
 
 function enqueueWidgetTransition<T>(operation: () => Promise<T>): Promise<T> {
   const next = widgetTransition.then(operation, operation);
   widgetTransition = next.then(() => undefined, () => undefined);
   return next;
+}
+
+async function currentWorkArea() {
+  const { currentMonitor } = await import("@tauri-apps/api/window");
+  const monitor = await currentMonitor().catch(() => null);
+  return monitor ? {
+    position: { x: monitor.workArea.position.x, y: monitor.workArea.position.y },
+    size: { width: monitor.workArea.size.width, height: monitor.workArea.size.height },
+  } : null;
 }
 
 export const isTauri = () => "__TAURI_INTERNALS__" in window;
@@ -112,28 +125,67 @@ export function setWidgetMode(mode: WidgetMode): Promise<WidgetPreferences | und
   if (!isTauri()) return Promise.resolve({ ...defaultPreferences, widgetMode: mode });
   return enqueueWidgetTransition(async () => {
     const { invoke } = await import("@tauri-apps/api/core");
-    const { currentMonitor } = await import("@tauri-apps/api/window");
-    const monitor = await currentMonitor().catch(() => null);
-    const workArea = monitor ? {
-      position: { x: monitor.workArea.position.x, y: monitor.workArea.position.y },
-      size: { width: monitor.workArea.size.width, height: monitor.workArea.size.height },
-    } : null;
+    const workArea = await currentWorkArea();
     return invoke<WidgetPreferences>("set_widget_mode", { mode, workArea });
   });
 }
 
 export function setWidgetSize(size: WidgetSize): Promise<WidgetPreferences | undefined> {
-  if (!isTauri()) return Promise.resolve({ ...defaultPreferences, widgetSize: size });
+  if (!isTauri()) {
+    const factor = size === "small" ? 0.84 : size === "large" ? 1.16 : 1;
+    return Promise.resolve({ ...defaultPreferences, widgetSize: size, compactSize: 72 * factor, expandedSize: 306 * factor });
+  }
   return enqueueWidgetTransition(async () => {
     const { invoke } = await import("@tauri-apps/api/core");
-    const { currentMonitor } = await import("@tauri-apps/api/window");
-    const monitor = await currentMonitor().catch(() => null);
-    const workArea = monitor ? {
-      position: { x: monitor.workArea.position.x, y: monitor.workArea.position.y },
-      size: { width: monitor.workArea.size.width, height: monitor.workArea.size.height },
-    } : null;
+    const workArea = await currentWorkArea();
     return invoke<WidgetPreferences>("set_widget_size", { size, workArea });
   });
+}
+
+export async function beginWidgetResize(mode: WidgetMode, edge: ResizeEdge): Promise<void> {
+  if (!isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("begin_widget_resize", { mode, edge, workArea: await currentWorkArea() });
+}
+
+async function drainWidgetResizePreviews(): Promise<void> {
+  if (!isTauri()) return;
+  if (resizePreviewRunning) return resizePreviewDrain;
+  resizePreviewRunning = true;
+  resizePreviewDrain = (async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      while (resizePreviewLatest !== null) {
+        const size = resizePreviewLatest;
+        resizePreviewLatest = null;
+        await invoke("preview_widget_resize", { size, workArea: await currentWorkArea() });
+      }
+    } finally {
+      resizePreviewRunning = false;
+    }
+  })();
+  return resizePreviewDrain;
+}
+
+export function previewWidgetResize(size: number): void {
+  if (!isTauri()) return;
+  resizePreviewLatest = size;
+  void drainWidgetResizePreviews().catch(() => undefined);
+}
+
+export async function finishWidgetResize(mode: WidgetMode, size: number): Promise<WidgetPreferences | undefined> {
+  if (!isTauri()) return { ...defaultPreferences, [mode === "compact" ? "compactSize" : "expandedSize"]: size, widgetSize: "custom", widgetMode: mode };
+  await drainWidgetResizePreviews();
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<WidgetPreferences>("finish_widget_resize", { size, workArea: await currentWorkArea() });
+}
+
+export async function cancelWidgetResize(): Promise<void> {
+  if (!isTauri()) return;
+  resizePreviewLatest = null;
+  await drainWidgetResizePreviews();
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("cancel_widget_resize");
 }
 
 export async function listenDesktopEvents(handlers: {

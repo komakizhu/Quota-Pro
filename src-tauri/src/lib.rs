@@ -27,11 +27,11 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_updater::UpdaterExt;
 use tauri_plugin_window_state::Builder as WindowStateBuilder;
 
-// These are the light-theme visual dimensions. They deliberately do not vary
-// by appearance: a theme changes colours only, while the native window keeps
-// the same footprint as its CSS content.
-const COLLAPSED_LOGICAL_SIZE: f64 = 72.0;
-const EXPANDED_LOGICAL_SIZE: f64 = 306.0;
+// These are the macOS-native-density visual dimensions. They deliberately do
+// not vary by appearance: a theme changes colours only, while the native
+// window keeps the same footprint as its CSS content.
+const COLLAPSED_LOGICAL_SIZE: f64 = 64.0;
+const EXPANDED_LOGICAL_SIZE: f64 = 264.0;
 const EDGE_SAFE_INSET_LOGICAL: f64 = 4.0;
 const POSITION_EPSILON: u32 = 2;
 
@@ -479,27 +479,27 @@ mod geometry_tests {
 
     #[test]
     fn window_size_includes_the_transparent_safe_inset() {
-        assert_eq!(window_size_for_visual_size(72, 4), 80);
-        assert_eq!(widget_window_size(306.0, 1.5, 6), 471);
+        assert_eq!(window_size_for_visual_size(64, 4), 72);
+        assert_eq!(widget_window_size(264.0, 1.5, 6), 408);
     }
 
     #[test]
     fn expansion_stays_inside_a_bottom_work_area_without_moving_the_anchor() {
         let position = expanded_position_in_bounds(
-            rect(1844, 964, 80),
-            PhysicalSize::new(314, 314),
+            rect(1844, 964, 72),
+            PhysicalSize::new(272, 272),
             PhysicalPosition::new(0, 0),
             PhysicalSize::new(1920, 1040),
             4,
         );
-        assert_eq!(position, PhysicalPosition::new(1610, 730));
+        assert_eq!(position, PhysicalPosition::new(1652, 772));
     }
 
     #[test]
     fn expansion_handles_negative_origin_work_areas() {
         let position = expanded_position_in_bounds(
-            rect(-1284, -4, 80),
-            PhysicalSize::new(314, 314),
+            rect(-1284, -4, 72),
+            PhysicalSize::new(272, 272),
             PhysicalPosition::new(-1280, 0),
             PhysicalSize::new(1280, 984),
             4,
@@ -510,20 +510,20 @@ mod geometry_tests {
     #[test]
     fn expansion_clamps_only_when_the_expanded_window_would_overflow() {
         let position = expanded_position_in_bounds(
-            rect(1750, 900, 80),
-            PhysicalSize::new(314, 314),
+            rect(1750, 900, 72),
+            PhysicalSize::new(272, 272),
             PhysicalPosition::new(0, 0),
             PhysicalSize::new(1920, 1040),
             4,
         );
-        assert_eq!(position, PhysicalPosition::new(1610, 730));
+        assert_eq!(position, PhysicalPosition::new(1652, 772));
     }
 
     #[test]
     fn expansion_preserves_an_arbitrary_compact_anchor() {
         let position = expanded_position_in_bounds(
-            rect(720, 420, 80),
-            PhysicalSize::new(314, 314),
+            rect(720, 420, 72),
+            PhysicalSize::new(272, 272),
             PhysicalPosition::new(0, 0),
             PhysicalSize::new(1920, 1040),
             4,

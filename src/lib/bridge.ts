@@ -1,6 +1,6 @@
-import type { ProviderSnapshot, SupporterStatus, WidgetMode, WidgetPreferences, WidgetSkin } from "../types";
+import type { ProviderSnapshot, SupporterStatus, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin } from "../types";
 
-const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
 
 const mockSnapshot: ProviderSnapshot = {
   provider: "codex",
@@ -119,6 +119,20 @@ export function setWidgetMode(mode: WidgetMode): Promise<WidgetPreferences | und
       size: { width: monitor.workArea.size.width, height: monitor.workArea.size.height },
     } : null;
     return invoke<WidgetPreferences>("set_widget_mode", { mode, workArea });
+  });
+}
+
+export function setWidgetSize(size: WidgetSize): Promise<WidgetPreferences | undefined> {
+  if (!isTauri()) return Promise.resolve({ ...defaultPreferences, widgetSize: size });
+  return enqueueWidgetTransition(async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { currentMonitor } = await import("@tauri-apps/api/window");
+    const monitor = await currentMonitor().catch(() => null);
+    const workArea = monitor ? {
+      position: { x: monitor.workArea.position.x, y: monitor.workArea.position.y },
+      size: { width: monitor.workArea.size.width, height: monitor.workArea.size.height },
+    } : null;
+    return invoke<WidgetPreferences>("set_widget_size", { size, workArea });
   });
 }
 

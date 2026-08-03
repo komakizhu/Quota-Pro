@@ -48,6 +48,8 @@ pub struct WidgetPreferences {
     pub always_on_top: bool,
     #[serde(default)]
     pub widget_mode: String,
+    #[serde(default = "default_widget_size")]
+    pub widget_size: String,
     #[serde(default, skip_serializing)]
     pub stay_expanded: bool,
     pub pinned_provider: Option<String>,
@@ -84,6 +86,9 @@ fn default_appearance() -> String {
 fn default_skin() -> String {
     "default".into()
 }
+fn default_widget_size() -> String {
+    "medium".into()
+}
 
 impl Default for WidgetPreferences {
     fn default() -> Self {
@@ -91,6 +96,7 @@ impl Default for WidgetPreferences {
             locked: false,
             always_on_top: true,
             widget_mode: "compact".into(),
+            widget_size: default_widget_size(),
             stay_expanded: false,
             pinned_provider: None,
             auto_rotate_seconds: 12,
@@ -116,6 +122,9 @@ impl WidgetPreferences {
                 "compact"
             }
             .into();
+        }
+        if !matches!(self.widget_size.as_str(), "small" | "medium" | "large") {
+            self.widget_size = default_widget_size();
         }
         self.stay_expanded = false;
         self.auto_rotate_seconds = self.auto_rotate_seconds.clamp(5, 300);
@@ -182,5 +191,12 @@ mod tests {
         let mut preferences = WidgetPreferences::default();
         preferences.widget_mode = "invalid".into();
         assert_eq!(preferences.normalized().widget_mode, "compact");
+    }
+
+    #[test]
+    fn invalid_widget_size_defaults_to_medium() {
+        let mut preferences = WidgetPreferences::default();
+        preferences.widget_size = "invalid".into();
+        assert_eq!(preferences.normalized().widget_size, "medium");
     }
 }

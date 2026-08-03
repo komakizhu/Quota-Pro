@@ -41,4 +41,13 @@ describe("widget transitions", () => {
       "end:set_widget_mode",
     ]);
   });
+
+  it("passes the requested widget size and monitor work area to Rust", async () => {
+    const { setWidgetSize } = await import("./bridge");
+    await setWidgetSize("large");
+    expect(api.invoke).toHaveBeenCalledWith("set_widget_size", {
+      size: "large",
+      workArea: { position: { x: 0, y: 0 }, size: { width: 1920, height: 1040 } },
+    });
+  });
 });

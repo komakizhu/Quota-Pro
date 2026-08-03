@@ -5,6 +5,7 @@ export type WidgetTheme = "light" | "dark";
 export type AppearancePreference = "system" | WidgetTheme;
 export type WidgetSkin = "default" | "blur" | "computer";
 export type WidgetMode = "compact" | "expanded";
+export type WidgetSize = "small" | "medium" | "large";
 
 export interface SupporterStatus {
   requestCode: string;
@@ -39,6 +40,7 @@ export interface WidgetPreferences {
   locked: boolean;
   alwaysOnTop: boolean;
   widgetMode: WidgetMode;
+  widgetSize: WidgetSize;
   pinnedProvider: ProviderId | null;
   autoRotateSeconds: number;
   language: Language;

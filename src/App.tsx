@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { QuotaCard, QuotaOrb } from "./components/QuotaCard";
 import { fetchSnapshots, getPreferences, getSupporterStatus, listenDesktopEvents, setAlwaysOnTop, setWidgetMode, startDragging, syncWidgetAppearance, updatePreferences } from "./lib/bridge";
 import { needsFastRefresh, quotaTier } from "./lib/format";
@@ -6,9 +6,12 @@ import { checkForAppUpdate, openReleasePage } from "./lib/appUpdate";
 import { copy, normalizeLanguage } from "./lib/i18n";
 import { mergeSnapshots } from "./lib/snapshots";
 import { DESKTOP_PALETTES } from "./lib/desktopPalette";
-import type { ProviderSnapshot, WidgetMode, WidgetPreferences, WidgetSkin, WidgetTheme } from "./types";
+import type { ProviderSnapshot, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin, WidgetTheme } from "./types";
 
-const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const WIDGET_SCALE: Record<WidgetSize, number> = { small: 0.84, medium: 1, large: 1.16 };
+const COMPUTER_ORB_SCALE: Record<WidgetSize, number> = { small: 0.9444, medium: 1.11, large: 1.2778 };
+const COMPUTER_ORB_MARGIN: Record<WidgetSize, string> = { small: "-2px", medium: "4px", large: "10px" };
 const INITIAL_SNAPSHOT: ProviderSnapshot = {
   provider: "codex",
   displayName: "CODEX",
@@ -122,6 +125,7 @@ export default function App() {
     ...DEFAULT_PREFS,
     ...value,
     widgetMode: value.widgetMode ?? (value.stayExpanded ? "expanded" : "compact"),
+    widgetSize: value.widgetSize === "small" || value.widgetSize === "large" || value.widgetSize === "medium" ? value.widgetSize : "medium",
     language: normalizeLanguage(value.language),
   }), []);
 
@@ -201,7 +205,12 @@ export default function App() {
   // The production widget and design workbench share one explicit palette
   // source. Theme records are independent so light and dark cannot leak into
   // one another through CSS defaults or preview state.
-  const cardStyle = paletteName ? DESKTOP_PALETTES[theme][paletteName] : undefined;
+  const cardStyle = {
+    ...(paletteName ? DESKTOP_PALETTES[theme][paletteName] : {}),
+    "--widget-scale": String(WIDGET_SCALE[preferences.widgetSize]),
+    "--computer-orb-scale": String(COMPUTER_ORB_SCALE[preferences.widgetSize]),
+    "--computer-orb-margin": COMPUTER_ORB_MARGIN[preferences.widgetSize],
+  } as CSSProperties;
 
   const savePreferences = useCallback((next: WidgetPreferences) => {
     const previous = preferences;

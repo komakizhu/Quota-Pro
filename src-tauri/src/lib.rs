@@ -27,11 +27,10 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_updater::UpdaterExt;
 use tauri_plugin_window_state::Builder as WindowStateBuilder;
 
-// These are the macOS-native-density visual dimensions. They deliberately do
-// not vary by appearance: a theme changes colours only, while the native
-// window keeps the same footprint as its CSS content.
-const COLLAPSED_LOGICAL_SIZE: f64 = 64.0;
-const EXPANDED_LOGICAL_SIZE: f64 = 264.0;
+// These are the base visual dimensions. The widget size preference scales both
+// the native window and the matching CSS component around these dimensions.
+const COLLAPSED_LOGICAL_SIZE: f64 = 72.0;
+const EXPANDED_LOGICAL_SIZE: f64 = 306.0;
 const EDGE_SAFE_INSET_LOGICAL: f64 = 4.0;
 const POSITION_EPSILON: u32 = 2;
 
@@ -63,6 +62,13 @@ struct WorkAreaPayload {
 enum WidgetMode {
     Collapsed,
     Expanded,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WidgetSize {
+    Small,
+    Medium,
+    Large,
 }
 
 #[derive(Clone, Copy)]
@@ -319,7 +325,13 @@ fn expanded_position(
                 PhysicalSize::new(area.size.width, area.size.height),
             )
         })
-        .unwrap_or_else(|| (*monitor.position(), *monitor.size()));
+        .unwrap_or_else(|| {
+            let area = monitor.work_area();
+            (
+                PhysicalPosition::new(area.position.x, area.position.y),
+                PhysicalSize::new(area.size.width, area.size.height),
+            )
+        });
     expanded_position_in_bounds(
         collapsed,
         expanded_size,
@@ -378,6 +390,48 @@ fn mode_preference(mode: WidgetMode) -> &'static str {
     }
 }
 
+fn widget_size_from_preference(value: &str) -> WidgetSize {
+    match value {
+        "small" => WidgetSize::Small,
+        "large" => WidgetSize::Large,
+        _ => WidgetSize::Medium,
+    }
+}
+
+fn widget_size_preference(size: WidgetSize) -> &'static str {
+    match size {
+        WidgetSize::Small => "small",
+        WidgetSize::Medium => "medium",
+        WidgetSize::Large => "large",
+    }
+}
+
+fn widget_size_factor(size: WidgetSize) -> f64 {
+    match size {
+        WidgetSize::Small => 0.84,
+        WidgetSize::Medium => 1.0,
+        WidgetSize::Large => 1.16,
+    }
+}
+
+fn widget_sizes(
+    size: WidgetSize,
+    scale_factor: f64,
+    safe_inset: u32,
+) -> (PhysicalSize<u32>, PhysicalSize<u32>) {
+    let factor = widget_size_factor(size);
+    let collapsed = widget_window_size(COLLAPSED_LOGICAL_SIZE * factor, scale_factor, safe_inset);
+    let expanded = widget_window_size(EXPANDED_LOGICAL_SIZE * factor, scale_factor, safe_inset);
+    (
+        PhysicalSize::new(collapsed, collapsed),
+        PhysicalSize::new(expanded, expanded),
+    )
+}
+
+fn current_widget_size(state: &AppState) -> WidgetSize {
+    widget_size_from_preference(&preferences_lock_value(state).widget_size)
+}
+
 fn set_widget_mode_internal(
     mode: WidgetMode,
     work_area: Option<WorkAreaPayload>,
@@ -390,14 +444,8 @@ fn set_widget_mode_internal(
     let current = current_widget_rect(&window)?;
     let (monitor, scale_factor) = monitor_and_scale(&window)?;
     let safe_inset = safe_inset_for_current_appearance(state, scale_factor) as i32;
-    let collapsed_size = PhysicalSize::new(
-        widget_window_size(COLLAPSED_LOGICAL_SIZE, scale_factor, safe_inset as u32),
-        widget_window_size(COLLAPSED_LOGICAL_SIZE, scale_factor, safe_inset as u32),
-    );
-    let expanded_size = PhysicalSize::new(
-        widget_window_size(EXPANDED_LOGICAL_SIZE, scale_factor, safe_inset as u32),
-        widget_window_size(EXPANDED_LOGICAL_SIZE, scale_factor, safe_inset as u32),
-    );
+    let (collapsed_size, expanded_size) =
+        widget_sizes(current_widget_size(state), scale_factor, safe_inset as u32);
     let previous = state.geometry.lock().ok().and_then(|value| *value);
     let anchor = previous
         .map(|value| value.collapsed_rect.position)
@@ -466,6 +514,104 @@ fn set_widget_mode(
     set_widget_mode_internal(mode_from_preference(&mode)?, work_area, &app, state.inner())
 }
 
+fn set_widget_size_internal(
+    size: WidgetSize,
+    work_area: Option<WorkAreaPayload>,
+    app: &AppHandle,
+    state: &AppState,
+) -> Result<WidgetPreferences, String> {
+    let window = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "widget window missing".to_string())?;
+    let current = current_widget_rect(&window)?;
+    let (monitor, scale_factor) = monitor_and_scale(&window)?;
+    let safe_inset = safe_inset_for_current_appearance(state, scale_factor) as i32;
+    let current_preferences = preferences_lock_value(state).clone();
+    let current_size = widget_size_from_preference(&current_preferences.widget_size);
+    let (old_collapsed_size, _) = widget_sizes(current_size, scale_factor, safe_inset as u32);
+    let (collapsed_size, expanded_size) = widget_sizes(size, scale_factor, safe_inset as u32);
+    let previous = state.geometry.lock().ok().and_then(|value| *value);
+    let mode = previous
+        .map(|value| value.mode)
+        .or_else(|| mode_from_preference(&current_preferences.widget_mode).ok())
+        .unwrap_or_else(|| infer_mode(current, old_collapsed_size));
+    let anchor_position = previous
+        .map(|value| value.collapsed_rect.position)
+        .unwrap_or(current.position);
+
+    let Some(monitor) = monitor else {
+        let target_size = if matches!(mode, WidgetMode::Collapsed) {
+            collapsed_size
+        } else {
+            expanded_size
+        };
+        window
+            .set_size(target_size)
+            .map_err(|_| "failed to resize widget".to_string())?;
+        let mut preferences = current_preferences;
+        preferences.widget_size = widget_size_preference(size).into();
+        persist_preferences(&state.preferences_path, &preferences)?;
+        *preferences_lock_value(state) = preferences.clone();
+        if let Ok(mut geometry) = state.geometry.lock() {
+            *geometry = Some(WidgetGeometryState {
+                mode,
+                collapsed_rect: WidgetRect {
+                    position: anchor_position,
+                    size: collapsed_size,
+                },
+            });
+        }
+        let _ = app.emit_to("widget", "preferences-changed", preferences.clone());
+        return Ok(preferences);
+    };
+
+    let anchor = WidgetRect {
+        position: clamp_position_to_monitor(anchor_position, collapsed_size, &monitor, safe_inset),
+        size: collapsed_size,
+    };
+    let (target_position, target_size) = match mode {
+        WidgetMode::Collapsed => (anchor.position, collapsed_size),
+        WidgetMode::Expanded => (
+            expanded_position(anchor, expanded_size, &monitor, work_area, safe_inset),
+            expanded_size,
+        ),
+    };
+    window
+        .set_position(target_position)
+        .map_err(|_| "failed to position widget".to_string())?;
+    window
+        .set_size(target_size)
+        .map_err(|_| "failed to resize widget".to_string())?;
+    if let Ok(mut geometry) = state.geometry.lock() {
+        *geometry = Some(WidgetGeometryState {
+            mode,
+            collapsed_rect: anchor,
+        });
+    }
+    let mut preferences = current_preferences;
+    preferences.widget_size = widget_size_preference(size).into();
+    persist_preferences(&state.preferences_path, &preferences)?;
+    *preferences_lock_value(state) = preferences.clone();
+    let _ = app.emit_to("widget", "preferences-changed", preferences.clone());
+    Ok(preferences)
+}
+
+#[tauri::command]
+fn set_widget_size(
+    size: String,
+    work_area: Option<WorkAreaPayload>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<WidgetPreferences, String> {
+    let size = match size.as_str() {
+        "small" => WidgetSize::Small,
+        "medium" => WidgetSize::Medium,
+        "large" => WidgetSize::Large,
+        _ => return Err("invalid widget size".to_string()),
+    };
+    set_widget_size_internal(size, work_area, &app, state.inner())
+}
+
 #[cfg(test)]
 mod geometry_tests {
     use super::*;
@@ -479,27 +625,40 @@ mod geometry_tests {
 
     #[test]
     fn window_size_includes_the_transparent_safe_inset() {
-        assert_eq!(window_size_for_visual_size(64, 4), 72);
-        assert_eq!(widget_window_size(264.0, 1.5, 6), 408);
+        assert_eq!(window_size_for_visual_size(72, 4), 80);
+        assert_eq!(widget_window_size(306.0, 1.5, 6), 471);
+    }
+
+    #[test]
+    fn widget_size_presets_scale_both_window_modes() {
+        let (small_collapsed, small_expanded) = widget_sizes(WidgetSize::Small, 1.0, 4);
+        let (medium_collapsed, medium_expanded) = widget_sizes(WidgetSize::Medium, 1.0, 4);
+        let (large_collapsed, large_expanded) = widget_sizes(WidgetSize::Large, 1.0, 4);
+        assert_eq!(small_collapsed.width, 68);
+        assert_eq!(small_expanded.width, 265);
+        assert_eq!(medium_collapsed.width, 80);
+        assert_eq!(medium_expanded.width, 314);
+        assert_eq!(large_collapsed.width, 92);
+        assert_eq!(large_expanded.width, 363);
     }
 
     #[test]
     fn expansion_stays_inside_a_bottom_work_area_without_moving_the_anchor() {
         let position = expanded_position_in_bounds(
-            rect(1844, 964, 72),
-            PhysicalSize::new(272, 272),
+            rect(1844, 964, 80),
+            PhysicalSize::new(314, 314),
             PhysicalPosition::new(0, 0),
             PhysicalSize::new(1920, 1040),
             4,
         );
-        assert_eq!(position, PhysicalPosition::new(1652, 772));
+        assert_eq!(position, PhysicalPosition::new(1610, 730));
     }
 
     #[test]
     fn expansion_handles_negative_origin_work_areas() {
         let position = expanded_position_in_bounds(
-            rect(-1284, -4, 72),
-            PhysicalSize::new(272, 272),
+            rect(-1284, -4, 80),
+            PhysicalSize::new(314, 314),
             PhysicalPosition::new(-1280, 0),
             PhysicalSize::new(1280, 984),
             4,
@@ -510,20 +669,20 @@ mod geometry_tests {
     #[test]
     fn expansion_clamps_only_when_the_expanded_window_would_overflow() {
         let position = expanded_position_in_bounds(
-            rect(1750, 900, 72),
-            PhysicalSize::new(272, 272),
+            rect(1750, 900, 80),
+            PhysicalSize::new(314, 314),
             PhysicalPosition::new(0, 0),
             PhysicalSize::new(1920, 1040),
             4,
         );
-        assert_eq!(position, PhysicalPosition::new(1652, 772));
+        assert_eq!(position, PhysicalPosition::new(1610, 730));
     }
 
     #[test]
     fn expansion_preserves_an_arbitrary_compact_anchor() {
         let position = expanded_position_in_bounds(
-            rect(720, 420, 72),
-            PhysicalSize::new(272, 272),
+            rect(720, 420, 80),
+            PhysicalSize::new(314, 314),
             PhysicalPosition::new(0, 0),
             PhysicalSize::new(1920, 1040),
             4,
@@ -540,16 +699,15 @@ fn begin_widget_drag(app: AppHandle, state: State<'_, AppState>) -> Result<(), S
     let current = current_widget_rect(&window)?;
     let (_, scale_factor) = monitor_and_scale(&window)?;
     let safe_inset = safe_inset_for_current_appearance(state.inner(), scale_factor);
-    let collapsed_size = PhysicalSize::new(
-        widget_window_size(COLLAPSED_LOGICAL_SIZE, scale_factor, safe_inset),
-        widget_window_size(COLLAPSED_LOGICAL_SIZE, scale_factor, safe_inset),
-    );
+    let (collapsed_size, _) =
+        widget_sizes(current_widget_size(state.inner()), scale_factor, safe_inset);
     let mode = state
         .geometry
         .lock()
         .ok()
         .and_then(|value| *value)
         .map(|value| value.mode)
+        .or_else(|| mode_from_preference(&preferences_lock_value(state.inner()).widget_mode).ok())
         .unwrap_or_else(|| infer_mode(current, collapsed_size));
     if let Ok(mut drag_mode) = state.drag_mode.lock() {
         *drag_mode = Some(mode);
@@ -568,14 +726,8 @@ fn finish_widget_drag(app: AppHandle, state: State<'_, AppState>) -> Result<(), 
         return Ok(());
     };
     let safe_inset = safe_inset_for_current_appearance(state.inner(), scale_factor);
-    let collapsed_size = PhysicalSize::new(
-        widget_window_size(COLLAPSED_LOGICAL_SIZE, scale_factor, safe_inset),
-        widget_window_size(COLLAPSED_LOGICAL_SIZE, scale_factor, safe_inset),
-    );
-    let expanded_size = PhysicalSize::new(
-        widget_window_size(EXPANDED_LOGICAL_SIZE, scale_factor, safe_inset),
-        widget_window_size(EXPANDED_LOGICAL_SIZE, scale_factor, safe_inset),
-    );
+    let (collapsed_size, expanded_size) =
+        widget_sizes(current_widget_size(state.inner()), scale_factor, safe_inset);
     let mode = state
         .drag_mode
         .lock()
@@ -1010,18 +1162,22 @@ fn sync_widget_appearance(
     let current = current_widget_rect(&window)?;
     let (_, scale_factor) = monitor_and_scale(&window)?;
     let safe_inset = safe_inset_for_current_appearance(state.inner(), scale_factor);
-    let expanded_threshold = logical_to_physical(
-        (COLLAPSED_LOGICAL_SIZE + EXPANDED_LOGICAL_SIZE) / 2.0,
-        scale_factor,
-    );
-    let visual_size = if current.size.width > expanded_threshold {
-        EXPANDED_LOGICAL_SIZE
+    let (collapsed_size, expanded_size) =
+        widget_sizes(current_widget_size(state.inner()), scale_factor, safe_inset);
+    let mode = state
+        .geometry
+        .lock()
+        .ok()
+        .and_then(|value| *value)
+        .map(|value| value.mode)
+        .unwrap_or_else(|| infer_mode(current, collapsed_size));
+    let target_size = if matches!(mode, WidgetMode::Expanded) {
+        expanded_size
     } else {
-        COLLAPSED_LOGICAL_SIZE
+        collapsed_size
     };
-    let side = widget_window_size(visual_size, scale_factor, safe_inset);
     window
-        .set_size(PhysicalSize::new(side, side))
+        .set_size(target_size)
         .map_err(|_| "failed to resize widget for appearance".to_string())
 }
 
@@ -1032,7 +1188,25 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let unlock = MenuItem::with_id(app, "unlock", "Unlock widget", true, None::<&str>)?;
     let pin = MenuItem::with_id(app, "pin", "Pin / Unpin Codex", true, None::<&str>)?;
     let toggle_mode =
-        MenuItem::with_id(app, "toggle-mode", "Toggle widget size", true, None::<&str>)?;
+        MenuItem::with_id(app, "toggle-mode", "Toggle widget mode", true, None::<&str>)?;
+    let size_small =
+        CheckMenuItem::with_id(app, "widget-size-small", "Small", true, false, None::<&str>)?;
+    let size_medium = CheckMenuItem::with_id(
+        app,
+        "widget-size-medium",
+        "Medium",
+        true,
+        true,
+        None::<&str>,
+    )?;
+    let size_large =
+        CheckMenuItem::with_id(app, "widget-size-large", "Large", true, false, None::<&str>)?;
+    let widget_size = Submenu::with_items(
+        app,
+        "Widget size / 组件大小",
+        true,
+        &[&size_small, &size_medium, &size_large],
+    )?;
     let language = MenuItem::with_id(
         app,
         "language",
@@ -1119,7 +1293,14 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         app,
         "Settings / 设置",
         true,
-        &[&unlock, &pin, &toggle_mode, &language, &autostart],
+        &[
+            &unlock,
+            &pin,
+            &toggle_mode,
+            &widget_size,
+            &language,
+            &autostart,
+        ],
     )?;
     let initial_language = app
         .try_state::<AppState>()
@@ -1151,11 +1332,24 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                 .map(|prefs| prefs.appearance.clone())
         })
         .unwrap_or_else(|| "system".into());
+    let initial_widget_size = app
+        .try_state::<AppState>()
+        .and_then(|state| {
+            state
+                .preferences
+                .lock()
+                .ok()
+                .map(|prefs| widget_size_from_preference(&prefs.widget_size))
+        })
+        .unwrap_or(WidgetSize::Medium);
     let _ = supporter_blur.set_checked(initial_selected_skin == BLUR_SKIN_ID);
     let _ = supporter_computer.set_checked(initial_selected_skin == COMPUTER_SKIN_ID);
     let _ = theme_system.set_checked(initial_appearance == "system");
     let _ = theme_dark.set_checked(initial_appearance == "dark");
     let _ = theme_light.set_checked(initial_appearance == "light");
+    let _ = size_small.set_checked(matches!(initial_widget_size, WidgetSize::Small));
+    let _ = size_medium.set_checked(matches!(initial_widget_size, WidgetSize::Medium));
+    let _ = size_large.set_checked(matches!(initial_widget_size, WidgetSize::Large));
     let enabled_skins = app
         .try_state::<AppState>()
         .and_then(|state| {
@@ -1174,7 +1368,11 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         let _ = update.set_text(update_menu_label(&initial_language, false));
         let _ = unlock.set_text("解锁悬浮窗");
         let _ = pin.set_text("固定 / 取消固定 Codex");
-        let _ = toggle_mode.set_text("切换窗口大小");
+        let _ = toggle_mode.set_text("切换展开状态");
+        let _ = widget_size.set_text("组件大小");
+        let _ = size_small.set_text("小");
+        let _ = size_medium.set_text("中");
+        let _ = size_large.set_text("大");
         let _ = language.set_text("Switch to English");
         let _ = theme.set_text("主题");
         let _ = default_skin.set_text("默认皮肤");
@@ -1194,6 +1392,10 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         let _ = theme_light.set_text("Light");
         let _ = supporter_skins.set_text("Supporter skins");
         let _ = supporter_skins_top.set_text("Support developer (skins)");
+        let _ = widget_size.set_text("Widget size");
+        let _ = size_small.set_text("Small");
+        let _ = size_medium.set_text("Medium");
+        let _ = size_large.set_text("Large");
     }
     #[cfg(debug_assertions)]
     let menu = Menu::with_items(
@@ -1236,6 +1438,10 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let unlock_menu = unlock.clone();
     let pin_menu = pin.clone();
     let toggle_mode_menu = toggle_mode.clone();
+    let widget_size_menu = widget_size.clone();
+    let size_small_menu = size_small.clone();
+    let size_medium_menu = size_medium.clone();
+    let size_large_menu = size_large.clone();
     let language_menu = language.clone();
     let theme_menu = theme.clone();
     let default_skin_menu = default_skin.clone();
@@ -1413,6 +1619,20 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                     );
                 }
             }
+            "widget-size-small" | "widget-size-medium" | "widget-size-large" => {
+                let size = match event.id.as_ref() {
+                    "widget-size-small" => WidgetSize::Small,
+                    "widget-size-large" => WidgetSize::Large,
+                    _ => WidgetSize::Medium,
+                };
+                if let Some(state) = app.try_state::<AppState>() {
+                    if set_widget_size_internal(size, None, app, state.inner()).is_ok() {
+                        let _ = size_small_menu.set_checked(matches!(size, WidgetSize::Small));
+                        let _ = size_medium_menu.set_checked(matches!(size, WidgetSize::Medium));
+                        let _ = size_large_menu.set_checked(matches!(size, WidgetSize::Large));
+                    }
+                }
+            }
             "language" => {
                 if let Some(state) = app.try_state::<AppState>() {
                     if let Ok(mut prefs) = state.preferences.lock() {
@@ -1453,10 +1673,18 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                             "固定 / 取消固定 Codex"
                         });
                         let _ = toggle_mode_menu.set_text(if english {
-                            "Toggle widget size"
+                            "Toggle widget mode"
                         } else {
-                            "切换窗口大小"
+                            "切换展开状态"
                         });
+                        let _ = widget_size_menu.set_text(if english {
+                            "Widget size"
+                        } else {
+                            "组件大小"
+                        });
+                        let _ = size_small_menu.set_text(if english { "Small" } else { "小" });
+                        let _ = size_medium_menu.set_text(if english { "Medium" } else { "中" });
+                        let _ = size_large_menu.set_text(if english { "Large" } else { "大" });
                         let _ = language_menu.set_text(if english {
                             "切换到中文"
                         } else {
@@ -1684,6 +1912,7 @@ pub fn run() {
             get_snapshots,
             refresh_snapshots,
             set_widget_mode,
+            set_widget_size,
             begin_widget_drag,
             finish_widget_drag,
             get_preferences,

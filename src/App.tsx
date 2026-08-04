@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { QuotaCard, QuotaOrb } from "./components/QuotaCard";
-import { beginWidgetResize, cancelWidgetResize, fetchSnapshots, finishWidgetResize, getPreferences, getSupporterStatus, listenDesktopEvents, previewWidgetResize, setAlwaysOnTop, setWidgetMode, startDragging, syncWidgetAppearance, updatePreferences } from "./lib/bridge";
+import { beginWidgetResize, cancelWidgetResize, fetchSnapshots, finishWidgetResize, getPreferences, getSupporterStatus, listenDesktopEvents, previewWidgetResize, resetWidgetSize, setAlwaysOnTop, setWidgetMode, startDragging, syncWidgetAppearance, updatePreferences } from "./lib/bridge";
 import { needsFastRefresh, quotaTier } from "./lib/format";
 import { checkForAppUpdate, openReleasePage } from "./lib/appUpdate";
 import { copy, normalizeLanguage } from "./lib/i18n";
@@ -267,8 +267,21 @@ export default function App() {
     }
   }, [normalizePreferences, operation.resizeFailed, preferences]);
 
+  const resetResize = useCallback(async (mode: WidgetMode) => {
+    const previous = preferences;
+    try {
+      const saved = await resetWidgetSize(mode, previous);
+      if (saved) setPreferences(normalizePreferences(saved));
+      setOperationError(null);
+    } catch (error) {
+      setPreferences(previous);
+      setOperationError(operation.resizeFailed);
+      throw error;
+    }
+  }, [normalizePreferences, operation.resizeFailed, preferences]);
+
   if (preferences.widgetMode === "compact") {
-    return <QuotaOrb snapshot={current} language={language} onExpand={() => { void refresh(true); void changeWidgetMode("expanded"); }} onDrag={() => startDragging()} onResizeStart={(edge) => beginResize("compact", edge)} onResizePreview={previewResize} onResizeCommit={(size) => commitResize("compact", size)} onResizeCancel={cancelWidgetResize} resizeSize={preferences.compactSize} theme={theme} skin={skin} style={cardStyle} />;
+    return <QuotaOrb snapshot={current} language={language} onExpand={() => { void refresh(true); void changeWidgetMode("expanded"); }} onDrag={() => startDragging()} onResizeStart={(edge) => beginResize("compact", edge)} onResizePreview={previewResize} onResizeCommit={(size) => commitResize("compact", size)} onResizeCancel={cancelWidgetResize} onResizeReset={() => resetResize("compact")} resizeSize={preferences.compactSize} theme={theme} skin={skin} style={cardStyle} />;
   }
 
   return (
@@ -286,6 +299,7 @@ export default function App() {
       onResizePreview={previewResize}
       onResizeCommit={(size) => commitResize("expanded", size)}
       onResizeCancel={cancelWidgetResize}
+      onResizeReset={() => resetResize("expanded")}
       resizeSize={preferences.expandedSize}
       onRefresh={() => refresh(true)}
       isConsuming={consumingProviders.has(current.provider)}

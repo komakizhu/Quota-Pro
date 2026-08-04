@@ -99,6 +99,9 @@ struct WidgetResizeState {
     edge: ResizeEdge,
     start_rect: WidgetRect,
     start_collapsed_rect: WidgetRect,
+    scale_factor: f64,
+    safe_inset: u32,
+    bounds: Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>,
 }
 
 struct AppState {
@@ -488,6 +491,23 @@ fn widget_size_factor(size: WidgetSize) -> f64 {
     }
 }
 
+fn widget_size_marker(compact_size: f64, expanded_size: f64) -> &'static str {
+    const EPSILON: f64 = 0.01;
+    for (size, name) in [
+        (WidgetSize::Small, "small"),
+        (WidgetSize::Medium, "medium"),
+        (WidgetSize::Large, "large"),
+    ] {
+        let factor = widget_size_factor(size);
+        if (compact_size - COLLAPSED_LOGICAL_SIZE * factor).abs() <= EPSILON
+            && (expanded_size - EXPANDED_LOGICAL_SIZE * factor).abs() <= EPSILON
+        {
+            return name;
+        }
+    }
+    "custom"
+}
+
 fn clamp_logical_size(mode: WidgetMode, size: f64) -> f64 {
     let (min, max) = match mode {
         WidgetMode::Collapsed => (COMPACT_MIN_LOGICAL_SIZE, COMPACT_MAX_LOGICAL_SIZE),
@@ -583,11 +603,11 @@ fn set_widget_mode_internal(
         ),
     };
     window
-        .set_position(target_position)
-        .map_err(|_| "failed to position widget".to_string())?;
-    window
         .set_size(target_size)
         .map_err(|_| "failed to resize widget".to_string())?;
+    window
+        .set_position(target_position)
+        .map_err(|_| "failed to position widget".to_string())?;
     if let Ok(mut geometry) = state.geometry.lock() {
         *geometry = Some(WidgetGeometryState {
             mode,
@@ -687,11 +707,11 @@ fn set_widget_size_internal(
         ),
     };
     window
-        .set_position(target_position)
-        .map_err(|_| "failed to position widget".to_string())?;
-    window
         .set_size(target_size)
         .map_err(|_| "failed to resize widget".to_string())?;
+    window
+        .set_position(target_position)
+        .map_err(|_| "failed to position widget".to_string())?;
     if let Ok(mut geometry) = state.geometry.lock() {
         *geometry = Some(WidgetGeometryState {
             mode,
@@ -748,9 +768,77 @@ fn resize_position(
     )
 }
 
+fn max_outer_width_for_resize(
+    start: WidgetRect,
+    edge: ResizeEdge,
+    bounds: (PhysicalPosition<i32>, PhysicalSize<u32>),
+    safe_inset: u32,
+) -> u32 {
+    let (bounds_position, bounds_size) = bounds;
+    let bounds_left = bounds_position.x - safe_inset as i32;
+    let bounds_right = bounds_position.x + bounds_size.width as i32 + safe_inset as i32;
+    if matches!(
+        edge,
+        ResizeEdge::West | ResizeEdge::NorthWest | ResizeEdge::SouthWest
+    ) {
+        (start.position.x + start.size.width as i32 - bounds_left).max(1) as u32
+    } else {
+        (bounds_right - start.position.x).max(1) as u32
+    }
+}
+
+fn max_outer_height_for_resize(
+    start: WidgetRect,
+    edge: ResizeEdge,
+    bounds: (PhysicalPosition<i32>, PhysicalSize<u32>),
+    safe_inset: u32,
+) -> u32 {
+    let (bounds_position, bounds_size) = bounds;
+    let bounds_top = bounds_position.y - safe_inset as i32;
+    let bounds_bottom = bounds_position.y + bounds_size.height as i32 + safe_inset as i32;
+    if matches!(
+        edge,
+        ResizeEdge::North | ResizeEdge::NorthEast | ResizeEdge::NorthWest
+    ) {
+        (start.position.y + start.size.height as i32 - bounds_top).max(1) as u32
+    } else {
+        (bounds_bottom - start.position.y).max(1) as u32
+    }
+}
+
+fn max_logical_size_for_resize(session: &WidgetResizeState) -> Option<f64> {
+    let bounds = session.bounds?;
+    // Every resize keeps the widget square, so a horizontal edge drag can
+    // also reach a vertical work-area boundary (and vice versa). Always use
+    // both limits; corners naturally get the smaller of their two axes.
+    let max_outer =
+        max_outer_width_for_resize(session.start_rect, session.edge, bounds, session.safe_inset)
+            .min(max_outer_height_for_resize(
+                session.start_rect,
+                session.edge,
+                bounds,
+                session.safe_inset,
+            ));
+    Some(((max_outer as f64 - (session.safe_inset * 2) as f64) / session.scale_factor).max(1.0))
+}
+
+fn rect_intersects_bounds(
+    position: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+    bounds: (PhysicalPosition<i32>, PhysicalSize<u32>),
+) -> bool {
+    let right = position.x + size.width as i32;
+    let bottom = position.y + size.height as i32;
+    let bounds_right = bounds.0.x + bounds.1.width as i32;
+    let bounds_bottom = bounds.0.y + bounds.1.height as i32;
+    right > bounds.0.x
+        && position.x < bounds_right
+        && bottom > bounds.0.y
+        && position.y < bounds_bottom
+}
+
 fn apply_widget_resize(
     size: f64,
-    work_area: Option<WorkAreaPayload>,
     app: &AppHandle,
     state: &AppState,
     persist: bool,
@@ -763,24 +851,34 @@ fn apply_widget_resize(
     let window = app
         .get_webview_window("widget")
         .ok_or_else(|| "widget window missing".to_string())?;
-    let (monitor, scale_factor) = monitor_and_scale(&window)?;
-    let safe_inset = safe_inset_for_current_appearance(state, scale_factor);
-    let logical_size = clamp_logical_size(session.mode, size);
-    let target = widget_window_size(logical_size, scale_factor, safe_inset);
+    let boundary_max = max_logical_size_for_resize(&session).unwrap_or(f64::INFINITY);
+    let minimum_size = clamp_logical_size(session.mode, f64::NAN);
+    let logical_size = clamp_logical_size(session.mode, size).min(boundary_max.max(minimum_size));
+    let target = widget_window_size(logical_size, session.scale_factor, session.safe_inset);
     let target_size = PhysicalSize::new(target, target);
     let raw_position = resize_position(session.start_rect, target_size, session.edge);
-    let target_position = clamp_position_in_bounds(
-        raw_position,
-        target_size,
-        bounds_for_resize(monitor.as_ref(), work_area),
-        safe_inset as i32,
-    );
-    window
-        .set_position(target_position)
-        .map_err(|_| "failed to position widget during resize".to_string())?;
+    // Resizing should keep the opposite edge fixed, even when the dragged
+    // edge reaches a work-area boundary. Only recover from a completely
+    // off-screen start/target rectangle; normal edge resizing must not be
+    // treated as position snapping.
+    let target_position = session
+        .bounds
+        .filter(|bounds| !rect_intersects_bounds(raw_position, target_size, *bounds))
+        .map(|bounds| {
+            clamp_position_in_bounds(
+                raw_position,
+                target_size,
+                Some(bounds),
+                session.safe_inset as i32,
+            )
+        })
+        .unwrap_or(raw_position);
     window
         .set_size(target_size)
         .map_err(|_| "failed to resize widget".to_string())?;
+    window
+        .set_position(target_position)
+        .map_err(|_| "failed to position widget during resize".to_string())?;
 
     if let Ok(mut geometry) = state.geometry.lock() {
         *geometry = Some(WidgetGeometryState {
@@ -804,7 +902,8 @@ fn apply_widget_resize(
         WidgetMode::Collapsed => preferences.compact_size = logical_size,
         WidgetMode::Expanded => preferences.expanded_size = logical_size,
     }
-    preferences.widget_size = "custom".into();
+    preferences.widget_size =
+        widget_size_marker(preferences.compact_size, preferences.expanded_size).into();
     preferences.widget_mode = mode_preference(session.mode).into();
     persist_preferences(&state.preferences_path, &preferences)?;
     *preferences_lock_value(state) = preferences.clone();
@@ -816,6 +915,7 @@ fn apply_widget_resize(
 fn begin_widget_resize(
     mode: String,
     edge: String,
+    work_area: Option<WorkAreaPayload>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -828,7 +928,7 @@ fn begin_widget_resize(
     }
     let requested_mode = mode_from_preference(&mode)?;
     let current = current_widget_rect(&window)?;
-    let (_, scale_factor) = monitor_and_scale(&window)?;
+    let (monitor, scale_factor) = monitor_and_scale(&window)?;
     let safe_inset = safe_inset_for_current_appearance(state.inner(), scale_factor);
     let (collapsed_size, _) = widget_dimensions(&preferences, scale_factor, safe_inset);
     let geometry = state.geometry.lock().ok().and_then(|value| *value);
@@ -842,11 +942,15 @@ fn begin_widget_resize(
             position: current.position,
             size: collapsed_size,
         });
+    let bounds = bounds_for_resize(monitor.as_ref(), work_area);
     let session = WidgetResizeState {
         mode: actual_mode,
         edge: resize_edge_from_preference(&edge)?,
         start_rect: current,
         start_collapsed_rect,
+        scale_factor,
+        safe_inset,
+        bounds,
     };
     *state
         .resize_state
@@ -858,22 +962,20 @@ fn begin_widget_resize(
 #[tauri::command]
 fn preview_widget_resize(
     size: f64,
-    work_area: Option<WorkAreaPayload>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let _ = apply_widget_resize(size, work_area, &app, state.inner(), false)?;
+    let _ = apply_widget_resize(size, &app, state.inner(), false)?;
     Ok(())
 }
 
 #[tauri::command]
 fn finish_widget_resize(
     size: f64,
-    work_area: Option<WorkAreaPayload>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<WidgetPreferences, String> {
-    let result = apply_widget_resize(size, work_area, &app, state.inner(), true)?
+    let result = apply_widget_resize(size, &app, state.inner(), true)?
         .ok_or_else(|| "failed to commit widget resize".to_string())?;
     *state
         .resize_state
@@ -891,8 +993,8 @@ fn cancel_widget_resize(app: AppHandle, state: State<'_, AppState>) -> Result<()
         .take();
     if let Some(session) = session {
         if let Some(window) = app.get_webview_window("widget") {
-            let _ = window.set_position(session.start_rect.position);
             let _ = window.set_size(session.start_rect.size);
+            let _ = window.set_position(session.start_rect.position);
         }
         if let Ok(mut geometry) = state.geometry.lock() {
             *geometry = Some(WidgetGeometryState {
@@ -902,6 +1004,90 @@ fn cancel_widget_resize(app: AppHandle, state: State<'_, AppState>) -> Result<()
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+fn reset_widget_size(
+    mode: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<WidgetPreferences, String> {
+    let mode = mode_from_preference(&mode)?;
+    *state
+        .resize_state
+        .lock()
+        .map_err(|_| "resize state unavailable".to_string())? = None;
+    let window = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "widget window missing".to_string())?;
+    let current = current_widget_rect(&window)?;
+    let (monitor, scale_factor) = monitor_and_scale(&window)?;
+    let safe_inset = safe_inset_for_current_appearance(state.inner(), scale_factor);
+    let target_logical = if matches!(mode, WidgetMode::Collapsed) {
+        COLLAPSED_LOGICAL_SIZE
+    } else {
+        EXPANDED_LOGICAL_SIZE
+    };
+    let target = widget_window_size(target_logical, scale_factor, safe_inset);
+    let target_size = PhysicalSize::new(target, target);
+    let target_position = bounds_for_resize(monitor.as_ref(), None)
+        .map(|bounds| {
+            clamp_position_in_bounds(
+                current.position,
+                target_size,
+                Some(bounds),
+                safe_inset as i32,
+            )
+        })
+        .unwrap_or(current.position);
+
+    window
+        .set_size(target_size)
+        .map_err(|_| "failed to reset widget size".to_string())?;
+    if let Err(error) = window.set_position(target_position) {
+        let _ = window.set_size(current.size);
+        let _ = window.set_position(current.position);
+        return Err(format!("failed to reposition widget after reset: {error}"));
+    }
+
+    let mut preferences = preferences_lock_value(state.inner()).clone();
+    if matches!(mode, WidgetMode::Collapsed) {
+        preferences.compact_size = COLLAPSED_LOGICAL_SIZE;
+    } else {
+        preferences.expanded_size = EXPANDED_LOGICAL_SIZE;
+    }
+    preferences.widget_size =
+        widget_size_marker(preferences.compact_size, preferences.expanded_size).into();
+    preferences.widget_mode = mode_preference(mode).into();
+    if let Err(error) = persist_preferences(&state.preferences_path, &preferences) {
+        let _ = window.set_size(current.size);
+        let _ = window.set_position(current.position);
+        return Err(error);
+    }
+    *preferences_lock_value(state.inner()) = preferences.clone();
+
+    if let Ok(mut geometry) = state.geometry.lock() {
+        let previous = geometry.unwrap_or(WidgetGeometryState {
+            mode,
+            collapsed_rect: WidgetRect {
+                position: current.position,
+                size: target_size,
+            },
+        });
+        *geometry = Some(WidgetGeometryState {
+            mode,
+            collapsed_rect: if matches!(mode, WidgetMode::Collapsed) {
+                WidgetRect {
+                    position: target_position,
+                    size: target_size,
+                }
+            } else {
+                previous.collapsed_rect
+            },
+        });
+    }
+    let _ = app.emit_to("widget", "preferences-changed", preferences.clone());
+    Ok(preferences)
 }
 
 #[cfg(test)]
@@ -962,6 +1148,64 @@ mod geometry_tests {
             resize_position(start, target, ResizeEdge::SouthEast),
             PhysicalPosition::new(100, 200)
         );
+    }
+
+    #[test]
+    fn resize_boundary_limits_keep_the_fixed_edges_at_the_screen_boundary() {
+        let bounds = (PhysicalPosition::new(0, 0), PhysicalSize::new(300, 300));
+        let start = rect(100, 100, 80);
+        let session = |edge| WidgetResizeState {
+            mode: WidgetMode::Collapsed,
+            edge,
+            start_rect: start,
+            start_collapsed_rect: start,
+            scale_factor: 1.0,
+            safe_inset: 4,
+            bounds: Some(bounds),
+        };
+        let expected = [
+            (ResizeEdge::East, 196.0, PhysicalPosition::new(100, 100)),
+            (ResizeEdge::West, 176.0, PhysicalPosition::new(-4, 100)),
+            (ResizeEdge::South, 196.0, PhysicalPosition::new(100, 100)),
+            (ResizeEdge::North, 176.0, PhysicalPosition::new(100, -4)),
+            (
+                ResizeEdge::SouthEast,
+                196.0,
+                PhysicalPosition::new(100, 100),
+            ),
+            (ResizeEdge::SouthWest, 176.0, PhysicalPosition::new(-4, 100)),
+            (ResizeEdge::NorthEast, 176.0, PhysicalPosition::new(100, -4)),
+            (ResizeEdge::NorthWest, 176.0, PhysicalPosition::new(-4, -4)),
+        ];
+        for (edge, logical_size, position) in expected {
+            let resize_session = session(edge);
+            assert_eq!(
+                max_logical_size_for_resize(&resize_session),
+                Some(logical_size)
+            );
+            let target = widget_window_size(logical_size, 1.0, 4);
+            assert_eq!(
+                resize_position(start, PhysicalSize::new(target, target), edge),
+                position
+            );
+        }
+    }
+
+    #[test]
+    fn square_resize_also_respects_the_other_axis_boundary_for_side_drags() {
+        let start = rect(100, 200, 80);
+        let session = WidgetResizeState {
+            mode: WidgetMode::Collapsed,
+            edge: ResizeEdge::East,
+            start_rect: start,
+            start_collapsed_rect: start,
+            scale_factor: 1.0,
+            safe_inset: 4,
+            bounds: Some((PhysicalPosition::new(0, 0), PhysicalSize::new(300, 300))),
+        };
+        // East drag fixes the left/top edges, but the square also grows down.
+        // The bottom boundary therefore limits the side to 96 logical px.
+        assert_eq!(max_logical_size_for_resize(&session), Some(96.0));
     }
 
     #[test]
@@ -1035,6 +1279,14 @@ mod geometry_tests {
             4,
         );
         assert_eq!(position, PhysicalPosition::new(720, 420));
+    }
+
+    #[test]
+    fn widget_size_marker_only_reports_presets_when_both_modes_match() {
+        assert_eq!(widget_size_marker(72.0, 306.0), "medium");
+        assert_eq!(widget_size_marker(72.0 * 0.84, 306.0 * 0.84), "small");
+        assert_eq!(widget_size_marker(72.0 * 1.16, 306.0 * 1.16), "large");
+        assert_eq!(widget_size_marker(72.0, 305.0), "custom");
     }
 }
 
@@ -2265,6 +2517,7 @@ pub fn run() {
             preview_widget_resize,
             finish_widget_resize,
             cancel_widget_resize,
+            reset_widget_size,
             begin_widget_drag,
             finish_widget_drag,
             get_preferences,

@@ -3,6 +3,15 @@ import type { ResizeEdge } from "./resize";
 
 const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
 
+function widgetSizeMarker(compactSize: number, expandedSize: number): WidgetSize {
+  const presets: Array<[WidgetSize, number, number]> = [
+    ["small", 72 * 0.84, 306 * 0.84],
+    ["medium", 72, 306],
+    ["large", 72 * 1.16, 306 * 1.16],
+  ];
+  return presets.find(([, compact, expanded]) => Math.abs(compactSize - compact) <= 0.01 && Math.abs(expandedSize - expanded) <= 0.01)?.[0] ?? "custom";
+}
+
 const mockSnapshot: ProviderSnapshot = {
   provider: "codex",
   displayName: "CODEX",
@@ -142,10 +151,12 @@ export function setWidgetSize(size: WidgetSize): Promise<WidgetPreferences | und
   });
 }
 
-export async function beginWidgetResize(mode: WidgetMode, edge: ResizeEdge): Promise<void> {
-  if (!isTauri()) return;
-  const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("begin_widget_resize", { mode, edge, workArea: await currentWorkArea() });
+export function beginWidgetResize(mode: WidgetMode, edge: ResizeEdge): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return enqueueWidgetTransition(async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("begin_widget_resize", { mode, edge, workArea: await currentWorkArea() });
+  });
 }
 
 async function drainWidgetResizePreviews(): Promise<void> {
@@ -158,7 +169,7 @@ async function drainWidgetResizePreviews(): Promise<void> {
       while (resizePreviewLatest !== null) {
         const size = resizePreviewLatest;
         resizePreviewLatest = null;
-        await invoke("preview_widget_resize", { size, workArea: await currentWorkArea() });
+        await invoke("preview_widget_resize", { size });
       }
     } finally {
       resizePreviewRunning = false;
@@ -175,17 +186,39 @@ export function previewWidgetResize(size: number): void {
 
 export async function finishWidgetResize(mode: WidgetMode, size: number): Promise<WidgetPreferences | undefined> {
   if (!isTauri()) return { ...defaultPreferences, [mode === "compact" ? "compactSize" : "expandedSize"]: size, widgetSize: "custom", widgetMode: mode };
-  await drainWidgetResizePreviews();
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<WidgetPreferences>("finish_widget_resize", { size, workArea: await currentWorkArea() });
+  return enqueueWidgetTransition(async () => {
+    await drainWidgetResizePreviews();
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<WidgetPreferences>("finish_widget_resize", { size });
+  });
 }
 
-export async function cancelWidgetResize(): Promise<void> {
-  if (!isTauri()) return;
-  resizePreviewLatest = null;
-  await drainWidgetResizePreviews();
-  const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("cancel_widget_resize");
+export async function resetWidgetSize(mode: WidgetMode, current: WidgetPreferences = defaultPreferences): Promise<WidgetPreferences | undefined> {
+  if (!isTauri()) {
+    const compactSize = mode === "compact" ? 72 : current.compactSize;
+    const expandedSize = mode === "expanded" ? 306 : current.expandedSize;
+    return {
+      ...current,
+      widgetMode: mode,
+      compactSize,
+      expandedSize,
+      widgetSize: widgetSizeMarker(compactSize, expandedSize),
+    };
+  }
+  return enqueueWidgetTransition(async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<WidgetPreferences>("reset_widget_size", { mode });
+  });
+}
+
+export function cancelWidgetResize(): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return enqueueWidgetTransition(async () => {
+    resizePreviewLatest = null;
+    await drainWidgetResizePreviews();
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("cancel_widget_resize");
+  });
 }
 
 export async function listenDesktopEvents(handlers: {

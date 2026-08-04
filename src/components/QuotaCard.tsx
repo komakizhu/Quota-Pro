@@ -3,7 +3,7 @@ import { memo, type CSSProperties, type MouseEvent as ReactMouseEvent, type Reac
 import { clampPercent, formatDateTime, formatResetDate, formatResetTime, quotaTier } from "../lib/format";
 import { blurProgressSegments } from "../lib/blurSkin";
 import { copy, normalizeLanguage } from "../lib/i18n";
-import { COMPACT_SIZE_RANGE, EXPANDED_SIZE_RANGE, getResizeEdge, resizeSizeFromPointer, type ResizeEdge } from "../lib/resize";
+import { COMPACT_SIZE_RANGE, EXPANDED_SIZE_RANGE, getResizeEdge, resizeHasMoved, resizeSizeFromPointer, type ResizeEdge } from "../lib/resize";
 import type { Language, ProviderSnapshot, WidgetPreferences, WidgetSkin, WidgetTheme } from "../types";
 import { ProviderMark } from "./ProviderMark";
 import computerGptLogoUrl from "../../assets/computer-gpt-logo.svg";
@@ -31,6 +31,7 @@ interface Props {
   onResizePreview?: (size: number) => void;
   onResizeCommit?: (size: number) => Promise<void>;
   onResizeCancel?: () => Promise<void>;
+  onResizeReset?: () => Promise<void>;
   resizeSize?: number;
   onRefresh?: () => void;
   isConsuming?: boolean;
@@ -106,6 +107,7 @@ export const QuotaCard = memo(function QuotaCard({
   onResizePreview,
   onResizeCommit,
   onResizeCancel,
+  onResizeReset,
   resizeSize = 306,
   onRefresh,
   isConsuming = false,
@@ -164,11 +166,12 @@ export const QuotaCard = memo(function QuotaCard({
     setActiveResizeEdge(edge);
     let ready = false;
     let released = false;
-    let committed = false;
+    let moved = false;
+    let finished = false;
     let latestSize = startSize;
     const commit = () => {
-      if (committed) return;
-      committed = true;
+      if (finished) return;
+      finished = true;
       resizeCleanup.current?.();
       resizeCleanup.current = null;
       void Promise.resolve(onResizeCommit?.(latestSize)).catch(() => {
@@ -179,8 +182,8 @@ export const QuotaCard = memo(function QuotaCard({
       });
     };
     const cancel = () => {
-      if (committed) return;
-      committed = true;
+      if (finished) return;
+      finished = true;
       resizeCleanup.current?.();
       resizeCleanup.current = null;
       void Promise.resolve(onResizeCancel?.()).finally(() => {
@@ -190,13 +193,15 @@ export const QuotaCard = memo(function QuotaCard({
       });
     };
     const onMove = (move: MouseEvent) => {
+      if (!moved && !resizeHasMoved(start.x, start.y, move.clientX, move.clientY)) return;
+      moved = true;
       latestSize = resizeSizeFromPointer(startSize, edge, move.clientX - start.x, move.clientY - start.y, EXPANDED_SIZE_RANGE);
       setPreviewSize(latestSize);
       if (ready) onResizePreview?.(latestSize);
     };
     const onUp = () => {
       released = true;
-      if (ready) commit();
+      if (ready) (moved ? commit : cancel)();
     };
     const onKeyDown = (keyboardEvent: KeyboardEvent) => { if (keyboardEvent.key === "Escape") cancel(); };
     window.addEventListener("mousemove", onMove);
@@ -221,9 +226,21 @@ export const QuotaCard = memo(function QuotaCard({
       }
       ready = true;
       if (latestSize !== startSize) onResizePreview?.(latestSize);
-      if (released) commit();
+      if (released) (moved ? commit : cancel)();
     })();
     return true;
+  };
+
+  const resetFromResizeEdge = (event: ReactMouseEvent<HTMLElement>) => {
+    if (isExcludedResizeTarget(event.target)) return;
+    const edge = getResizeEdge(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
+    if (!edge || !onResizeReset) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const previousSize = previewSize;
+    void onResizeReset()
+      .then(() => setPreviewSize(306))
+      .catch(() => setPreviewSize(previousSize));
   };
 
   return (
@@ -233,6 +250,7 @@ export const QuotaCard = memo(function QuotaCard({
       onMouseMove={(event) => { if (!activeResizeEdge) setHoveredResizeEdge(getResizeEdge(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect())); }}
       onMouseLeave={() => { if (!activeResizeEdge) setHoveredResizeEdge(null); }}
       onMouseDownCapture={startResize}
+      onDoubleClick={resetFromResizeEdge}
     >
       <div className="aurora" aria-hidden="true" />
       <span className="sr-only">拖动卡片边缘或角落可调整大小</span>
@@ -307,7 +325,7 @@ export const QuotaCard = memo(function QuotaCard({
   );
 });
 
-export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onResizeStart, onResizePreview, onResizeCommit, onResizeCancel, resizeSize = 72, language = "zh-CN", theme, skin = "default", style }: Pick<Props, "snapshot" | "onDrag" | "theme" | "skin" | "style" | "onResizeStart" | "onResizePreview" | "onResizeCommit" | "onResizeCancel" | "resizeSize"> & { language?: Language; onExpand: () => void }) {
+export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onResizeStart, onResizePreview, onResizeCommit, onResizeCancel, onResizeReset, resizeSize = 72, language = "zh-CN", theme, skin = "default", style }: Pick<Props, "snapshot" | "onDrag" | "theme" | "skin" | "style" | "onResizeStart" | "onResizePreview" | "onResizeCommit" | "onResizeCancel" | "onResizeReset" | "resizeSize"> & { language?: Language; onExpand: () => void }) {
   const [idle, setIdle] = useState(false);
   const [hoveredResizeEdge, setHoveredResizeEdge] = useState<ResizeEdge | null>(null);
   const [activeResizeEdge, setActiveResizeEdge] = useState<ResizeEdge | null>(null);
@@ -316,6 +334,8 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
   const dragCleanup = useRef<(() => void) | null>(null);
   const resizeCleanup = useRef<(() => void) | null>(null);
   const didDrag = useRef(false);
+  const didDragAt = useRef(0);
+  const suppressClickUntil = useRef(0);
   const resizing = useRef(false);
   const activeLanguage = normalizeLanguage(language);
   const t = copy[activeLanguage];
@@ -360,17 +380,19 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
     if (edge) {
       event.preventDefault();
       event.stopPropagation();
+      suppressClickUntil.current = Date.now() + 1000;
       const start = { x: event.clientX, y: event.clientY };
       const startSize = previewSize;
       setActiveResizeEdge(edge);
       resizing.current = true;
       let ready = false;
       let released = false;
-      let committed = false;
+      let moved = false;
+      let finished = false;
       let latestSize = startSize;
       const commit = () => {
-        if (committed) return;
-        committed = true;
+        if (finished) return;
+        finished = true;
         resizeCleanup.current?.();
         resizeCleanup.current = null;
         void Promise.resolve(onResizeCommit?.(latestSize)).catch(() => setPreviewSize(startSize)).finally(() => {
@@ -380,8 +402,8 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
         });
       };
       const cancel = () => {
-        if (committed) return;
-        committed = true;
+        if (finished) return;
+        finished = true;
         resizeCleanup.current?.();
         resizeCleanup.current = null;
         void Promise.resolve(onResizeCancel?.()).finally(() => {
@@ -392,13 +414,16 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
         });
       };
       const onMove = (move: MouseEvent) => {
+        if (!moved && !resizeHasMoved(start.x, start.y, move.clientX, move.clientY)) return;
+        moved = true;
+        suppressClickUntil.current = 0;
         latestSize = resizeSizeFromPointer(startSize, edge, move.clientX - start.x, move.clientY - start.y, COMPACT_SIZE_RANGE);
         setPreviewSize(latestSize);
         if (ready) onResizePreview?.(latestSize);
       };
       const onUp = () => {
         released = true;
-        if (ready) commit();
+        if (ready) (moved ? commit : cancel)();
       };
       const onKeyDown = (keyboardEvent: KeyboardEvent) => { if (keyboardEvent.key === "Escape") cancel(); };
       window.addEventListener("mousemove", onMove);
@@ -424,7 +449,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
         }
         ready = true;
         if (latestSize !== startSize) onResizePreview?.(latestSize);
-        if (released) commit();
+        if (released) (moved ? commit : cancel)();
       })();
       return;
     }
@@ -432,6 +457,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
     const onMove = (move: MouseEvent) => {
       if (Math.hypot(move.clientX - start.x, move.clientY - start.y) < 6) return;
       didDrag.current = true;
+      didDragAt.current = Date.now();
       dragCleanup.current?.();
       dragCleanup.current = null;
       void onDrag();
@@ -448,18 +474,31 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
     };
   };
 
+  const resetFromResizeEdge = (event: ReactMouseEvent<HTMLElement>) => {
+    const edge = getResizeEdge(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
+    if (!edge || !onResizeReset) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const previousSize = previewSize;
+    void onResizeReset()
+      .then(() => setPreviewSize(72))
+      .catch(() => setPreviewSize(previousSize));
+  };
+
   const handleClick = () => {
     if (resizing.current) return;
-    if (didDrag.current) {
+    if (Date.now() < suppressClickUntil.current) return;
+    if (didDrag.current && Date.now() - didDragAt.current < 500) {
       didDrag.current = false;
       return;
     }
+    didDrag.current = false;
     onExpand();
   };
 
   return (
     <main
-      style={{ ...style, "--widget-scale": String(previewSize / 72) } as CSSProperties}
+      style={{ ...style, "--widget-scale": String(previewSize / 72), "--computer-orb-scale": String((previewSize + 8) / 72), "--computer-orb-margin": `${(previewSize - 64) / 2}px` } as CSSProperties}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={() => {
         if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
@@ -467,6 +506,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
         if (!activeResizeEdge) setHoveredResizeEdge(null);
       }}
       onMouseDown={handleMouseDown}
+      onDoubleClick={resetFromResizeEdge}
       onMouseMove={(event) => { if (!activeResizeEdge) setHoveredResizeEdge(getResizeEdge(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect())); }}
       onClick={handleClick}
       onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onExpand(); } }}

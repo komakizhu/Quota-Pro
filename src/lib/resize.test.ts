@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampResizeSize, getResizeEdge, resizeDelta, resizeSizeFromPointer } from "./resize";
+import { clampResizeSize, getResizeEdge, resizeDelta, resizeHasMoved, resizeSizeFromPointer } from "./resize";
 
 const rect = { left: 100, top: 200, right: 400, bottom: 500 };
 
@@ -27,5 +27,10 @@ describe("resize helpers", () => {
   it("clamps compact and expanded ranges", () => {
     expect(clampResizeSize(10, { min: 48, max: 144 })).toBe(48);
     expect(clampResizeSize(900, { min: 220, max: 460 })).toBe(460);
+  });
+
+  it("requires movement before committing an edge gesture", () => {
+    expect(resizeHasMoved(10, 10, 14, 13)).toBe(false);
+    expect(resizeHasMoved(10, 10, 16, 13)).toBe(true);
   });
 });

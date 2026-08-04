@@ -51,7 +51,7 @@ describe("widget transitions", () => {
     });
   });
 
-  it("starts and commits a resize session without coupling preview writes to persistence", async () => {
+  it("captures the work area once and keeps preview writes independent of it", async () => {
     const { beginWidgetResize, finishWidgetResize, previewWidgetResize } = await import("./bridge");
     await beginWidgetResize("compact", "se");
     previewWidgetResize(96);
@@ -64,11 +64,16 @@ describe("widget transitions", () => {
     });
     expect(api.invoke).toHaveBeenCalledWith("preview_widget_resize", {
       size: 96,
-      workArea: { position: { x: 0, y: 0 }, size: { width: 1920, height: 1040 } },
     });
     expect(api.invoke).toHaveBeenCalledWith("finish_widget_resize", {
       size: 96,
-      workArea: { position: { x: 0, y: 0 }, size: { width: 1920, height: 1040 } },
     });
+    expect(api.currentMonitor).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets only the requested widget mode", async () => {
+    const { resetWidgetSize } = await import("./bridge");
+    await resetWidgetSize("expanded");
+    expect(api.invoke).toHaveBeenCalledWith("reset_widget_size", { mode: "expanded" });
   });
 });

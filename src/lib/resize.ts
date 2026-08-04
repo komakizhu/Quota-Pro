@@ -36,3 +36,7 @@ export function clampResizeSize(size: number, range: { min: number; max: number 
 export function resizeSizeFromPointer(startSize: number, edge: ResizeEdge, deltaX: number, deltaY: number, range: { min: number; max: number }): number {
   return clampResizeSize(startSize + resizeDelta(edge, deltaX, deltaY), range);
 }
+
+export function resizeHasMoved(startX: number, startY: number, currentX: number, currentY: number, threshold = 6): boolean {
+  return Math.hypot(currentX - startX, currentY - startY) >= threshold;
+}

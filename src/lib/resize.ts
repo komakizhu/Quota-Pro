@@ -2,16 +2,37 @@ export type ResizeEdge = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
 export const COMPACT_SIZE_RANGE = { min: 48, max: 144 } as const;
 export const EXPANDED_SIZE_RANGE = { min: 220, max: 460 } as const;
+/** The regular edge hit area, in CSS pixels. */
+export const RESIZE_EDGE_HIT_SIZE = 10;
+/**
+ * Corners get a larger square hit area so the diagonal cursor does not
+ * require pixel-perfect positioning near a rounded corner.
+ */
+export const RESIZE_CORNER_HIT_SIZE = 18;
 
-export function getResizeEdge(clientX: number, clientY: number, rect: Pick<DOMRect, "left" | "top" | "right" | "bottom">, hitSize = 10): ResizeEdge | null {
+export function getResizeEdge(
+  clientX: number,
+  clientY: number,
+  rect: Pick<DOMRect, "left" | "top" | "right" | "bottom">,
+  hitSize = RESIZE_EDGE_HIT_SIZE,
+  cornerHitSize = RESIZE_CORNER_HIT_SIZE,
+): ResizeEdge | null {
   const left = clientX - rect.left <= hitSize;
   const right = rect.right - clientX <= hitSize;
   const top = clientY - rect.top <= hitSize;
   const bottom = rect.bottom - clientY <= hitSize;
-  if (top && left) return "nw";
-  if (top && right) return "ne";
-  if (bottom && left) return "sw";
-  if (bottom && right) return "se";
+  const cornerLeft = clientX - rect.left <= cornerHitSize;
+  const cornerRight = rect.right - clientX <= cornerHitSize;
+  const cornerTop = clientY - rect.top <= cornerHitSize;
+  const cornerBottom = rect.bottom - clientY <= cornerHitSize;
+
+  // Check corners first. This keeps the diagonal affordance visible when the
+  // pointer is close to two edges, even if it is just outside the regular
+  // 10px edge strip.
+  if (cornerTop && cornerLeft) return "nw";
+  if (cornerTop && cornerRight) return "ne";
+  if (cornerBottom && cornerLeft) return "sw";
+  if (cornerBottom && cornerRight) return "se";
   if (top) return "n";
   if (bottom) return "s";
   if (left) return "w";

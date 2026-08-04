@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampResizeSize, getResizeEdge, resizeDelta, resizeHasMoved, resizeSizeFromPointer } from "./resize";
+import { clampResizeSize, getResizeEdge, RESIZE_CORNER_HIT_SIZE, resizeDelta, resizeHasMoved, resizeSizeFromPointer } from "./resize";
 
 const rect = { left: 100, top: 200, right: 400, bottom: 500 };
 
@@ -14,6 +14,14 @@ describe("resize helpers", () => {
     expect(getResizeEdge(101, 350, rect)).toBe("w");
     expect(getResizeEdge(399, 350, rect)).toBe("e");
     expect(getResizeEdge(250, 350, rect)).toBeNull();
+  });
+
+  it("keeps the diagonal cursor active across the larger corner hit areas", () => {
+    const inset = RESIZE_CORNER_HIT_SIZE - 1;
+    expect(getResizeEdge(rect.left + inset, rect.top + inset, rect)).toBe("nw");
+    expect(getResizeEdge(rect.right - inset, rect.top + inset, rect)).toBe("ne");
+    expect(getResizeEdge(rect.left + inset, rect.bottom - inset, rect)).toBe("sw");
+    expect(getResizeEdge(rect.right - inset, rect.bottom - inset, rect)).toBe("se");
   });
 
   it("keeps square dimensions while fixing the opposite edge", () => {

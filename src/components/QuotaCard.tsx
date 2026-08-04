@@ -3,6 +3,7 @@ import { memo, type CSSProperties, type MouseEvent as ReactMouseEvent, type Reac
 import { clampPercent, formatDateTime, formatResetDate, formatResetTime, quotaTier } from "../lib/format";
 import { blurProgressSegments } from "../lib/blurSkin";
 import { copy, normalizeLanguage } from "../lib/i18n";
+import { consumeOrbClick, createOrbDragState, recordOrbDrag } from "../lib/orbGesture";
 import { COMPACT_SIZE_RANGE, EXPANDED_SIZE_RANGE, getResizeEdge, resizeHasMoved, resizeSizeFromPointer, type ResizeEdge } from "../lib/resize";
 import type { Language, ProviderSnapshot, WidgetPreferences, WidgetSkin, WidgetTheme } from "../types";
 import { ProviderMark } from "./ProviderMark";
@@ -333,9 +334,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
   const idleTimer = useRef<number | null>(null);
   const dragCleanup = useRef<(() => void) | null>(null);
   const resizeCleanup = useRef<(() => void) | null>(null);
-  const didDrag = useRef(false);
-  const didDragAt = useRef(0);
-  const suppressClickUntil = useRef(0);
+  const dragClickState = useRef(createOrbDragState());
   const resizing = useRef(false);
   const activeLanguage = normalizeLanguage(language);
   const t = copy[activeLanguage];
@@ -376,11 +375,16 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
 
   const handleMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
     if (event.button !== 0) return;
+    // A previous drag may not produce a browser click (for example when the
+    // pointer is released outside the WebView). A new gesture starts a fresh
+    // click guard so that only the click belonging to the current drag is
+    // suppressed.
+    dragClickState.current = createOrbDragState();
     const edge = getResizeEdge(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
     if (edge) {
       event.preventDefault();
       event.stopPropagation();
-      suppressClickUntil.current = Date.now() + 1000;
+      dragClickState.current = recordOrbDrag(dragClickState.current);
       const start = { x: event.clientX, y: event.clientY };
       const startSize = previewSize;
       setActiveResizeEdge(edge);
@@ -416,7 +420,6 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
       const onMove = (move: MouseEvent) => {
         if (!moved && !resizeHasMoved(start.x, start.y, move.clientX, move.clientY)) return;
         moved = true;
-        suppressClickUntil.current = 0;
         latestSize = resizeSizeFromPointer(startSize, edge, move.clientX - start.x, move.clientY - start.y, COMPACT_SIZE_RANGE);
         setPreviewSize(latestSize);
         if (ready) onResizePreview?.(latestSize);
@@ -456,8 +459,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
     const start = { x: event.clientX, y: event.clientY };
     const onMove = (move: MouseEvent) => {
       if (Math.hypot(move.clientX - start.x, move.clientY - start.y) < 6) return;
-      didDrag.current = true;
-      didDragAt.current = Date.now();
+      dragClickState.current = recordOrbDrag(dragClickState.current);
       dragCleanup.current?.();
       dragCleanup.current = null;
       void onDrag();
@@ -486,13 +488,9 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
   };
 
   const handleClick = () => {
-    if (resizing.current) return;
-    if (Date.now() < suppressClickUntil.current) return;
-    if (didDrag.current && Date.now() - didDragAt.current < 500) {
-      didDrag.current = false;
-      return;
-    }
-    didDrag.current = false;
+    const clickGuard = consumeOrbClick(dragClickState.current);
+    dragClickState.current = clickGuard.state;
+    if (clickGuard.suppressed || resizing.current) return;
     onExpand();
   };
 

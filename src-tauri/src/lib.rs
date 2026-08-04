@@ -37,6 +37,12 @@ const EXPANDED_MIN_LOGICAL_SIZE: f64 = 220.0;
 const EXPANDED_MAX_LOGICAL_SIZE: f64 = 460.0;
 const EDGE_SAFE_INSET_LOGICAL: f64 = 4.0;
 const POSITION_EPSILON: u32 = 2;
+// The collapse control is the second button from the right in the card
+// header: 30px right padding, a 25px pin button, a 4px gap, and half of the
+// 25px collapse button. Keeping these offsets here lets native geometry align
+// the compact orb's center with that control without depending on WebView CSS.
+const COLLAPSE_BUTTON_CENTER_X_LOGICAL: f64 = 233.5;
+const COLLAPSE_BUTTON_CENTER_Y_LOGICAL: f64 = 42.5;
 
 #[derive(Clone, Copy)]
 struct WidgetRect {
@@ -320,6 +326,78 @@ fn widget_window_size(logical_visual_size: f64, scale_factor: f64, safe_inset: u
     )
 }
 
+fn visual_size(window_size: PhysicalSize<u32>, safe_inset: u32) -> f64 {
+    window_size
+        .width
+        .saturating_sub(safe_inset.saturating_mul(2)) as f64
+}
+
+fn compact_center_offset(
+    compact_size: PhysicalSize<u32>,
+    safe_inset: u32,
+) -> PhysicalPosition<i32> {
+    let visual = visual_size(compact_size, safe_inset);
+    PhysicalPosition::new(
+        (safe_inset as f64 + visual / 2.0).round() as i32,
+        (safe_inset as f64 + visual / 2.0).round() as i32,
+    )
+}
+
+fn collapse_button_center_offset(
+    expanded_size: PhysicalSize<u32>,
+    safe_inset: u32,
+) -> PhysicalPosition<i32> {
+    let scale = visual_size(expanded_size, safe_inset) / EXPANDED_LOGICAL_SIZE;
+    PhysicalPosition::new(
+        (safe_inset as f64 + COLLAPSE_BUTTON_CENTER_X_LOGICAL * scale).round() as i32,
+        (safe_inset as f64 + COLLAPSE_BUTTON_CENTER_Y_LOGICAL * scale).round() as i32,
+    )
+}
+
+fn compact_anchor_from_expanded(
+    expanded: WidgetRect,
+    compact_size: PhysicalSize<u32>,
+    safe_inset: u32,
+) -> WidgetRect {
+    let toggle_offset = collapse_button_center_offset(expanded.size, safe_inset);
+    let compact_offset = compact_center_offset(compact_size, safe_inset);
+    WidgetRect {
+        position: PhysicalPosition::new(
+            expanded.position.x + toggle_offset.x - compact_offset.x,
+            expanded.position.y + toggle_offset.y - compact_offset.y,
+        ),
+        size: compact_size,
+    }
+}
+
+fn compact_anchor_for_current(
+    current: WidgetRect,
+    compact_size: PhysicalSize<u32>,
+    safe_inset: u32,
+) -> WidgetRect {
+    if current.size.width > compact_size.width + POSITION_EPSILON {
+        compact_anchor_from_expanded(current, compact_size, safe_inset)
+    } else {
+        WidgetRect {
+            position: current.position,
+            size: compact_size,
+        }
+    }
+}
+
+fn expanded_position_from_anchor(
+    collapsed: WidgetRect,
+    expanded_size: PhysicalSize<u32>,
+    safe_inset: u32,
+) -> PhysicalPosition<i32> {
+    let compact_offset = compact_center_offset(collapsed.size, safe_inset);
+    let toggle_offset = collapse_button_center_offset(expanded_size, safe_inset);
+    PhysicalPosition::new(
+        collapsed.position.x + compact_offset.x - toggle_offset.x,
+        collapsed.position.y + compact_offset.y - toggle_offset.y,
+    )
+}
+
 fn expanded_position_in_bounds(
     collapsed: WidgetRect,
     expanded_size: PhysicalSize<u32>,
@@ -333,10 +411,8 @@ fn expanded_position_in_bounds(
     let min_y = bounds_position.y - safe_inset;
     let max_x = (monitor_right - expanded_size.width as i32 + safe_inset).max(min_x);
     let max_y = (monitor_bottom - expanded_size.height as i32 + safe_inset).max(min_y);
-    PhysicalPosition::new(
-        collapsed.position.x.clamp(min_x, max_x),
-        collapsed.position.y.clamp(min_y, max_y),
-    )
+    let desired = expanded_position_from_anchor(collapsed, expanded_size, safe_inset.max(0) as u32);
+    PhysicalPosition::new(desired.x.clamp(min_x, max_x), desired.y.clamp(min_y, max_y))
 }
 
 fn expanded_position(
@@ -574,7 +650,9 @@ fn set_widget_mode_internal(
     let previous = state.geometry.lock().ok().and_then(|value| *value);
     let anchor = previous
         .map(|value| value.collapsed_rect.position)
-        .unwrap_or(current.position);
+        .unwrap_or_else(|| {
+            compact_anchor_for_current(current, collapsed_size, safe_inset as u32).position
+        });
     let Some(monitor) = monitor else {
         let size = if matches!(mode, WidgetMode::Collapsed) {
             collapsed_size
@@ -584,6 +662,30 @@ fn set_widget_mode_internal(
         window
             .set_size(size)
             .map_err(|_| "failed to resize widget".to_string())?;
+        let target_position = if matches!(mode, WidgetMode::Collapsed) {
+            anchor
+        } else {
+            expanded_position_from_anchor(
+                WidgetRect {
+                    position: anchor,
+                    size: collapsed_size,
+                },
+                expanded_size,
+                safe_inset as u32,
+            )
+        };
+        window
+            .set_position(target_position)
+            .map_err(|_| "failed to position widget".to_string())?;
+        if let Ok(mut geometry) = state.geometry.lock() {
+            *geometry = Some(WidgetGeometryState {
+                mode,
+                collapsed_rect: WidgetRect {
+                    position: anchor,
+                    size: collapsed_size,
+                },
+            });
+        }
         let mut preferences = preferences_lock_value(state).clone();
         preferences.widget_mode = mode_preference(mode).into();
         persist_preferences(&state.preferences_path, &preferences)?;
@@ -668,7 +770,12 @@ fn set_widget_size_internal(
         .unwrap_or_else(|| infer_mode(current, old_collapsed_size));
     let anchor_position = previous
         .map(|value| value.collapsed_rect.position)
-        .unwrap_or(current.position);
+        .unwrap_or_else(|| match mode {
+            WidgetMode::Collapsed => current.position,
+            WidgetMode::Expanded => {
+                compact_anchor_from_expanded(current, collapsed_size, safe_inset as u32).position
+            }
+        });
 
     let Some(monitor) = monitor else {
         let target_size = if matches!(mode, WidgetMode::Collapsed) {
@@ -679,6 +786,21 @@ fn set_widget_size_internal(
         window
             .set_size(target_size)
             .map_err(|_| "failed to resize widget".to_string())?;
+        let target_position = if matches!(mode, WidgetMode::Collapsed) {
+            anchor_position
+        } else {
+            expanded_position_from_anchor(
+                WidgetRect {
+                    position: anchor_position,
+                    size: collapsed_size,
+                },
+                expanded_size,
+                safe_inset as u32,
+            )
+        };
+        window
+            .set_position(target_position)
+            .map_err(|_| "failed to position widget".to_string())?;
         let preferences = next_preferences;
         persist_preferences(&state.preferences_path, &preferences)?;
         *preferences_lock_value(state) = preferences.clone();
@@ -938,9 +1060,14 @@ fn begin_widget_resize(
     let actual_mode = requested_mode;
     let start_collapsed_rect = geometry
         .map(|value| value.collapsed_rect)
-        .unwrap_or_else(|| WidgetRect {
-            position: current.position,
-            size: collapsed_size,
+        .unwrap_or_else(|| match actual_mode {
+            WidgetMode::Collapsed => WidgetRect {
+                position: current.position,
+                size: collapsed_size,
+            },
+            WidgetMode::Expanded => {
+                compact_anchor_from_expanded(current, collapsed_size, safe_inset)
+            }
         });
     let bounds = bounds_for_resize(monitor.as_ref(), work_area);
     let session = WidgetResizeState {
@@ -1030,16 +1157,55 @@ fn reset_widget_size(
     };
     let target = widget_window_size(target_logical, scale_factor, safe_inset);
     let target_size = PhysicalSize::new(target, target);
+    let geometry = state.geometry.lock().ok().and_then(|value| *value);
+    let compact_size = widget_dimensions(
+        &preferences_lock_value(state.inner()).clone(),
+        scale_factor,
+        safe_inset,
+    )
+    .0;
+    let anchor_position = geometry
+        .map(|value| value.collapsed_rect.position)
+        .unwrap_or_else(|| match mode {
+            WidgetMode::Collapsed => current.position,
+            WidgetMode::Expanded => {
+                compact_anchor_from_expanded(current, compact_size, safe_inset).position
+            }
+        });
     let target_position = bounds_for_resize(monitor.as_ref(), None)
         .map(|bounds| {
             clamp_position_in_bounds(
-                current.position,
+                if matches!(mode, WidgetMode::Collapsed) {
+                    anchor_position
+                } else {
+                    expanded_position_from_anchor(
+                        WidgetRect {
+                            position: anchor_position,
+                            size: compact_size,
+                        },
+                        target_size,
+                        safe_inset,
+                    )
+                },
                 target_size,
                 Some(bounds),
                 safe_inset as i32,
             )
         })
-        .unwrap_or(current.position);
+        .unwrap_or_else(|| {
+            if matches!(mode, WidgetMode::Collapsed) {
+                anchor_position
+            } else {
+                expanded_position_from_anchor(
+                    WidgetRect {
+                        position: anchor_position,
+                        size: compact_size,
+                    },
+                    target_size,
+                    safe_inset,
+                )
+            }
+        });
 
     window
         .set_size(target_size)
@@ -1067,13 +1233,6 @@ fn reset_widget_size(
     *preferences_lock_value(state.inner()) = preferences.clone();
 
     if let Ok(mut geometry) = state.geometry.lock() {
-        let previous = geometry.unwrap_or(WidgetGeometryState {
-            mode,
-            collapsed_rect: WidgetRect {
-                position: current.position,
-                size: target_size,
-            },
-        });
         *geometry = Some(WidgetGeometryState {
             mode,
             collapsed_rect: if matches!(mode, WidgetMode::Collapsed) {
@@ -1082,7 +1241,10 @@ fn reset_widget_size(
                     size: target_size,
                 }
             } else {
-                previous.collapsed_rect
+                WidgetRect {
+                    position: anchor_position,
+                    size: compact_size,
+                }
             },
         });
     }
@@ -1266,19 +1428,32 @@ mod geometry_tests {
             PhysicalSize::new(1920, 1040),
             4,
         );
-        assert_eq!(position, PhysicalPosition::new(1610, 730));
+        assert_eq!(position, PhysicalPosition::new(1552, 730));
     }
 
     #[test]
-    fn expansion_preserves_an_arbitrary_compact_anchor() {
+    fn expansion_aligns_the_collapse_button_with_the_compact_center() {
+        let compact = rect(720, 420, 80);
         let position = expanded_position_in_bounds(
-            rect(720, 420, 80),
+            compact,
             PhysicalSize::new(314, 314),
             PhysicalPosition::new(0, 0),
             PhysicalSize::new(1920, 1040),
             4,
         );
-        assert_eq!(position, PhysicalPosition::new(720, 420));
+        assert_eq!(position, PhysicalPosition::new(522, 413));
+        let compact_center = compact_center_offset(compact.size, 4);
+        let collapse_button = collapse_button_center_offset(PhysicalSize::new(314, 314), 4);
+        assert_eq!(
+            PhysicalPosition::new(
+                compact.position.x + compact_center.x,
+                compact.position.y + compact_center.y,
+            ),
+            PhysicalPosition::new(
+                position.x + collapse_button.x,
+                position.y + collapse_button.y
+            )
+        );
     }
 
     #[test]
@@ -1371,15 +1546,34 @@ fn finish_widget_drag(app: AppHandle, state: State<'_, AppState>) -> Result<(), 
                 &monitor,
                 safe_inset as i32,
             );
+            let collapsed_rect = compact_anchor_from_expanded(
+                WidgetRect {
+                    position: current_position,
+                    size: expanded_size,
+                },
+                collapsed_size,
+                safe_inset,
+            );
+            let collapsed_rect = WidgetRect {
+                position: clamp_position_to_monitor(
+                    collapsed_rect.position,
+                    collapsed_size,
+                    &monitor,
+                    safe_inset as i32,
+                ),
+                size: collapsed_size,
+            };
             window
                 .set_position(current_position)
                 .map_err(|_| "failed to position widget".to_string())?;
             if let Ok(mut geometry) = state.geometry.lock() {
-                if let Some(mut value) = *geometry {
-                    value.mode = WidgetMode::Expanded;
-                    value.collapsed_rect.position = current_position;
-                    *geometry = Some(value);
-                }
+                let mut value = geometry.unwrap_or(WidgetGeometryState {
+                    mode: WidgetMode::Expanded,
+                    collapsed_rect,
+                });
+                value.mode = WidgetMode::Expanded;
+                value.collapsed_rect = collapsed_rect;
+                *geometry = Some(value);
             }
         }
     }

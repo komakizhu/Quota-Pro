@@ -10,15 +10,25 @@ const api = vi.hoisted(() => ({
   currentMonitor: vi.fn(async () => ({
     workArea: { position: { x: 0, y: 0 }, size: { width: 1920, height: 1040 } },
   })),
+  currentWindow: {
+    startDragging: vi.fn(async () => undefined),
+    outerPosition: vi.fn(async () => ({ x: 0, y: 0 })),
+  },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: api.invoke }));
-vi.mock("@tauri-apps/api/window", () => ({ currentMonitor: api.currentMonitor }));
+vi.mock("@tauri-apps/api/window", () => ({ currentMonitor: api.currentMonitor, getCurrentWindow: () => api.currentWindow }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   api.calls.length = 0;
-  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  vi.stubGlobal("window", {
+    __TAURI_INTERNALS__: {},
+    setInterval: globalThis.setInterval,
+    clearInterval: globalThis.clearInterval,
+    setTimeout: globalThis.setTimeout,
+    clearTimeout: globalThis.clearTimeout,
+  });
 });
 
 describe("widget transitions", () => {
@@ -75,5 +85,20 @@ describe("widget transitions", () => {
     const { resetWidgetSize } = await import("./bridge");
     await resetWidgetSize("expanded");
     expect(api.invoke).toHaveBeenCalledWith("reset_widget_size", { mode: "expanded" });
+  });
+
+  it("finishes a native drag after the window position settles", async () => {
+    const { startDragging } = await import("./bridge");
+    await startDragging();
+    expect(api.invoke).toHaveBeenCalledWith("begin_widget_drag");
+    expect(api.currentWindow.startDragging).toHaveBeenCalledTimes(1);
+    expect(api.invoke).toHaveBeenCalledWith("finish_widget_drag");
+  });
+
+  it("clears native drag state when platform dragging fails", async () => {
+    api.currentWindow.startDragging.mockRejectedValueOnce(new Error("drag failed"));
+    const { startDragging } = await import("./bridge");
+    await expect(startDragging()).rejects.toThrow("drag failed");
+    expect(api.invoke).toHaveBeenCalledWith("finish_widget_drag");
   });
 });

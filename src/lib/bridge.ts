@@ -106,28 +106,64 @@ export async function startDragging(): Promise<void> {
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
   const { invoke } = await import("@tauri-apps/api/core");
   const currentWindow = getCurrentWindow();
-  await invoke("begin_widget_drag");
-  await currentWindow.startDragging();
-  let previous = await currentWindow.outerPosition();
-  let stableTicks = 0;
-  let attempts = 0;
-  const finishWhenStable = window.setInterval(() => {
-    void currentWindow.outerPosition()
-      .then((next) => {
+  let began = false;
+  try {
+    await invoke("begin_widget_drag");
+    began = true;
+    await currentWindow.startDragging();
+    let previous = await currentWindow.outerPosition();
+    let stableTicks = 0;
+    let attempts = 0;
+    // Keep this promise pending until the native drag has settled. The orb
+    // uses that lifecycle to keep the release click suppressed; resolving as
+    // soon as startDragging() returns lets WebKit deliver a synthetic click
+    // while the platform drag is still winding down.
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      let pollInFlight = false;
+      let intervalId: number | null = null;
+      let timeoutId: number | null = null;
+      const cleanup = () => {
+        if (intervalId !== null) window.clearInterval(intervalId);
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+      };
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve();
+      };
+      const poll = () => {
+        if (settled || pollInFlight) return;
         attempts += 1;
-        const stable = Math.abs(next.x - previous.x) <= 1 && Math.abs(next.y - previous.y) <= 1;
-        stableTicks = stable ? stableTicks + 1 : 0;
-        previous = next;
-        if (stableTicks >= 3 || attempts >= 25) {
-          window.clearInterval(finishWhenStable);
-          void invoke("finish_widget_drag").catch(() => undefined);
+        if (attempts >= 25) {
+          finish();
+          return;
         }
-      })
-      .catch(() => {
-        window.clearInterval(finishWhenStable);
-        void invoke("finish_widget_drag").catch(() => undefined);
-      });
-  }, 80);
+        pollInFlight = true;
+        void currentWindow.outerPosition()
+          .then((next) => {
+            if (settled) return;
+            const stable = Math.abs(next.x - previous.x) <= 1 && Math.abs(next.y - previous.y) <= 1;
+            stableTicks = stable ? stableTicks + 1 : 0;
+            previous = next;
+            if (stableTicks >= 3) finish();
+          })
+          .catch(finish)
+          .finally(() => { pollInFlight = false; });
+      };
+      // A platform or WebView failure must not leave the drag state held
+      // forever. The timeout is wall-clock based, independent of a stuck
+      // outerPosition() request, and cleanup prevents interval accumulation.
+      timeoutId = window.setTimeout(finish, 2_500);
+      intervalId = window.setInterval(poll, 80);
+      poll();
+    });
+  } finally {
+    // begin_widget_drag records the mode used to update the anchor. Always
+    // clear it after a partially failed native drag as well as a normal one.
+    if (began) await invoke("finish_widget_drag").catch(() => undefined);
+  }
 }
 
 export function setWidgetMode(mode: WidgetMode): Promise<WidgetPreferences | undefined> {

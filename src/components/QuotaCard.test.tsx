@@ -56,6 +56,71 @@ describe("QuotaOrb drag and click gestures", () => {
     expect(onExpand).not.toHaveBeenCalled();
   });
 
+  it("keeps the release click suppressed when native drag replays mousedown", () => {
+    const { orb, onExpand } = renderOrb();
+
+    fireEvent.mouseDown(orb, { button: 0, clientX: 36, clientY: 36 });
+    fireEvent.mouseMove(window, { clientX: 50, clientY: 50 });
+    // WebKit can send a second mousedown as the native drag hands control back
+    // to the WebView. It must not reset the guard before the matching click.
+    fireEvent.mouseDown(orb, { button: 0, clientX: 50, clientY: 50 });
+    fireEvent.mouseMove(window, { clientX: 80, clientY: 80 });
+    fireEvent.click(orb);
+
+    expect(onExpand).not.toHaveBeenCalled();
+  });
+
+  it("allows a fresh click after the drag release guard expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const { orb, onExpand } = renderOrb();
+
+      fireEvent.mouseDown(orb, { button: 0, clientX: 36, clientY: 36 });
+      fireEvent.mouseMove(window, { clientX: 50, clientY: 50 });
+      fireEvent.mouseUp(window, { clientX: 50, clientY: 50 });
+      await Promise.resolve();
+      await Promise.resolve();
+      vi.setSystemTime(new Date(Date.now() + 351));
+      fireEvent.mouseDown(orb, { button: 0, clientX: 36, clientY: 36 });
+      fireEvent.mouseUp(window, { clientX: 36, clientY: 36 });
+      fireEvent.click(orb);
+
+      expect(onExpand).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not expand when a resize edge receives a replayed mousedown", () => {
+    const onExpand = vi.fn();
+    render(
+      <QuotaOrb
+        snapshot={snapshot}
+        onDrag={vi.fn()}
+        onExpand={onExpand}
+        onResizeStart={async () => {}}
+      />,
+    );
+    const orb = screen.getByRole("button");
+    vi.spyOn(orb, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 72,
+      bottom: 72,
+      width: 72,
+      height: 72,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.mouseDown(orb, { button: 0, clientX: 2, clientY: 2 });
+    fireEvent.mouseDown(orb, { button: 0, clientX: 2, clientY: 2 });
+    fireEvent.click(orb);
+
+    expect(onExpand).not.toHaveBeenCalled();
+  });
+
   it("still expands after a click without movement", () => {
     const { orb, onExpand } = renderOrb();
 

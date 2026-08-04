@@ -27,7 +27,7 @@ interface Props {
   onTogglePin: () => void;
   onLock: () => void;
   onCollapse: () => void;
-  onDrag: () => void;
+  onDrag: () => void | Promise<void>;
   onResizeStart?: (edge: ResizeEdge) => Promise<void>;
   onResizePreview?: (size: number) => void;
   onResizeCommit?: (size: number) => Promise<void>;
@@ -335,6 +335,8 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
   const dragCleanup = useRef<(() => void) | null>(null);
   const resizeCleanup = useRef<(() => void) | null>(null);
   const dragClickState = useRef(createOrbDragState());
+  const nativeDragActive = useRef(false);
+  const dragCooldownUntil = useRef(0);
   const resizing = useRef(false);
   const activeLanguage = normalizeLanguage(language);
   const t = copy[activeLanguage];
@@ -375,10 +377,17 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
 
   const handleMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
     if (event.button !== 0) return;
-    // A previous drag may not produce a browser click (for example when the
-    // pointer is released outside the WebView). A new gesture starts a fresh
-    // click guard so that only the click belonging to the current drag is
-    // suppressed.
+    // Native macOS dragging can briefly replay a mousedown before its release
+    // click reaches WebKit. Keep the guard through that replay and through a
+    // short post-release cooldown; otherwise that synthetic sequence can turn
+    // a move into an expand action. If no click is produced, the guard is
+    // cleared on the first gesture after the cooldown.
+    const gestureProtected = nativeDragActive.current || resizing.current || Date.now() < dragCooldownUntil.current;
+    if (gestureProtected) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     dragClickState.current = createOrbDragState();
     const edge = getResizeEdge(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
     if (edge) {
@@ -397,6 +406,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
       const commit = () => {
         if (finished) return;
         finished = true;
+        dragCooldownUntil.current = Math.max(dragCooldownUntil.current, Date.now() + 350);
         resizeCleanup.current?.();
         resizeCleanup.current = null;
         void Promise.resolve(onResizeCommit?.(latestSize)).catch(() => setPreviewSize(startSize)).finally(() => {
@@ -408,6 +418,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
       const cancel = () => {
         if (finished) return;
         finished = true;
+        dragCooldownUntil.current = Math.max(dragCooldownUntil.current, Date.now() + 350);
         resizeCleanup.current?.();
         resizeCleanup.current = null;
         void Promise.resolve(onResizeCancel?.()).finally(() => {
@@ -446,6 +457,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
           resizeCleanup.current?.();
           resizeCleanup.current = null;
           resizing.current = false;
+          dragCooldownUntil.current = Date.now() + 350;
           setActiveResizeEdge(null);
           setPreviewSize(startSize);
           return;
@@ -457,14 +469,27 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
       return;
     }
     const start = { x: event.clientX, y: event.clientY };
+    let dragged = false;
     const onMove = (move: MouseEvent) => {
       if (Math.hypot(move.clientX - start.x, move.clientY - start.y) < 6) return;
       dragClickState.current = recordOrbDrag(dragClickState.current);
-      dragCleanup.current?.();
-      dragCleanup.current = null;
-      void onDrag();
+      dragged = true;
+      nativeDragActive.current = true;
+      // Keep the release listener alive while the native drag owns the
+      // pointer. WebKit may not send the final click to the original target,
+      // but it can still deliver this window-level mouseup; using it to start
+      // the post-release cooldown closes that race.
+      window.removeEventListener("mousemove", onMove);
+      void Promise.resolve(onDrag()).catch(() => undefined).finally(() => {
+        nativeDragActive.current = false;
+        dragCooldownUntil.current = Date.now() + 350;
+      });
     };
     const onUp = () => {
+      if (dragged) {
+        nativeDragActive.current = false;
+        dragCooldownUntil.current = Math.max(dragCooldownUntil.current, Date.now() + 350);
+      }
       dragCleanup.current?.();
       dragCleanup.current = null;
     };
@@ -490,7 +515,8 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
   const handleClick = () => {
     const clickGuard = consumeOrbClick(dragClickState.current);
     dragClickState.current = clickGuard.state;
-    if (clickGuard.suppressed || resizing.current) return;
+    const inDragCooldown = Date.now() < dragCooldownUntil.current;
+    if (clickGuard.suppressed || resizing.current || inDragCooldown) return;
     onExpand();
   };
 

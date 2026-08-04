@@ -2464,6 +2464,15 @@ pub fn run() {
                 resize_state: Mutex::new(None),
                 update_available: Mutex::new(false),
             });
+            // Window-state restores the last native rectangle before this
+            // setup hook runs. Apply the persisted widget mode first, then
+            // reveal the transparent window so WebView content never paints
+            // an expanded card inside a stale compact rectangle.
+            if let Some(state) = app.try_state::<AppState>() {
+                if let Ok(mode) = mode_from_preference(&preferences.widget_mode) {
+                    let _ = set_widget_mode_internal(mode, None, app.handle(), state.inner());
+                }
+            }
             if setup_tray(app).is_err() {
                 eprintln!("tray setup failed; enabling taskbar fallback");
                 if let Some(window) = app.get_webview_window("widget") {
@@ -2475,6 +2484,7 @@ pub fn run() {
             }
             if let Some(window) = app.get_webview_window("widget") {
                 let _ = window.set_always_on_top(preferences.always_on_top);
+                let _ = window.show();
                 // A saved window position can be outside the active monitor while
                 // iterating in development. Keep the test widget discoverable.
                 #[cfg(debug_assertions)]

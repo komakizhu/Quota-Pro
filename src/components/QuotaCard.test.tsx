@@ -176,6 +176,10 @@ describe("QuotaCard mode toggle", () => {
     );
     const button = screen.getByRole("button", { name: "Collapse widget" });
     expect(button.className).toContain("widget-toggle--nw");
+    expect(button.closest(".quota-card")?.className).toContain("quota-card--toggle-nw");
+    expect(screen.getByText("0 reset credits").parentElement?.className).toContain("reset-credit-row");
+    expect(screen.queryByRole("img", { name: "GPT" })).toBeNull();
+    expect(screen.queryByLabelText("Codex")).toBeNull();
     fireEvent.click(button);
     expect(onCollapse).toHaveBeenCalledTimes(1);
   });

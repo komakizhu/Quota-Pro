@@ -644,6 +644,44 @@ fn safety_clamp_position_in_bounds(
     }
 }
 
+fn full_monitor_bounds(
+    monitor: Option<&tauri::Monitor>,
+) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    monitor.map(|item| (*item.position(), *item.size()))
+}
+
+fn select_widget_bounds(
+    monitor_bounds: Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>,
+    work_area_bounds: Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>,
+) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    #[cfg(target_os = "macos")]
+    {
+        monitor_bounds.or(work_area_bounds)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        work_area_bounds.or(monitor_bounds)
+    }
+}
+
+/// Return the bounds used for widget geometry corrections.
+///
+/// macOS reports a work area that excludes a side-mounted Dock. Treating that
+/// rectangle as a hard window boundary makes a widget sitting over the Dock
+/// look completely off-screen; the next resize then snaps it to the Dock's
+/// left edge. macOS transparent widgets are intentionally allowed to cover
+/// the full display, while Windows/Linux continue to respect taskbars and
+/// panels through the work-area payload.
+fn bounds_for_widget_geometry(
+    monitor: Option<&tauri::Monitor>,
+    work_area: Option<WorkAreaPayload>,
+) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    select_widget_bounds(
+        full_monitor_bounds(monitor),
+        bounds_for_resize(None, work_area),
+    )
+}
+
 fn current_widget_rect(window: &tauri::WebviewWindow) -> Result<WidgetRect, String> {
     Ok(WidgetRect {
         position: window
@@ -859,7 +897,7 @@ fn set_widget_mode_internal(
         let _ = app.emit_to("widget", "preferences-changed", preferences.clone());
         return Ok(preferences);
     };
-    let bounds = bounds_for_resize(Some(&monitor), work_area);
+    let bounds = bounds_for_widget_geometry(Some(&monitor), work_area);
     let anchor = WidgetRect {
         position: safety_clamp_position_in_bounds(anchor, collapsed_size, bounds, safe_inset),
         size: collapsed_size,
@@ -1007,7 +1045,7 @@ fn set_widget_size_internal(
         return Ok(preferences);
     };
 
-    let bounds = bounds_for_resize(Some(&monitor), work_area);
+    let bounds = bounds_for_widget_geometry(Some(&monitor), work_area);
     let anchor = WidgetRect {
         position: safety_clamp_position_in_bounds(
             anchor_position,
@@ -1287,7 +1325,7 @@ fn begin_widget_resize(
                 compact_anchor_from_expanded(current, collapsed_size, safe_inset, toggle_corner)
             }
         });
-    let bounds = bounds_for_resize(monitor.as_ref(), work_area);
+    let bounds = bounds_for_widget_geometry(monitor.as_ref(), work_area);
     let session = WidgetResizeState {
         mode: actual_mode,
         edge: resize_edge_from_preference(&edge)?,
@@ -1392,7 +1430,7 @@ fn reset_widget_size(
                     .position
             }
         });
-    let bounds = bounds_for_resize(monitor.as_ref(), None);
+    let bounds = bounds_for_widget_geometry(monitor.as_ref(), None);
     let (target_position, selected_corner) = if matches!(mode, WidgetMode::Collapsed) {
         (
             safety_clamp_position_in_bounds(
@@ -1581,6 +1619,34 @@ mod geometry_tests {
         // East drag fixes the left/top edges, but the square also grows down.
         // The bottom boundary therefore limits the side to 96 logical px.
         assert_eq!(max_logical_size_for_resize(&session), Some(96.0));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resize_over_a_side_dock_keeps_the_fixed_edge_on_the_full_display() {
+        let start = rect(1850, 100, 80);
+        let target = PhysicalSize::new(120, 120);
+        let raw_position = resize_position(start, target, ResizeEdge::East);
+        let full_display = (PhysicalPosition::new(0, 0), PhysicalSize::new(1920, 1080));
+        let dock_excluded_work_area = (PhysicalPosition::new(0, 0), PhysicalSize::new(1680, 1080));
+        let selected_bounds =
+            select_widget_bounds(Some(full_display), Some(dock_excluded_work_area));
+
+        // A side-mounted Dock can make the old work-area rectangle report no
+        // intersection even though the window is visibly on the display. The
+        // full monitor bounds used on macOS keep the east edge stable.
+        assert!(!rect_intersects_bounds(
+            raw_position,
+            target,
+            dock_excluded_work_area
+        ));
+        assert_eq!(selected_bounds, Some(full_display));
+        assert!(rect_intersects_bounds(
+            raw_position,
+            target,
+            selected_bounds.unwrap()
+        ));
+        assert_eq!(raw_position, PhysicalPosition::new(1850, 100));
     }
 
     #[test]
@@ -1785,7 +1851,7 @@ fn finish_widget_drag(app: AppHandle, state: State<'_, AppState>) -> Result<(), 
         .and_then(|value| *value)
         .map(|value| value.toggle_corner)
         .unwrap_or_else(|| toggle_corner_from_preference(&preferences.toggle_corner));
-    let bounds = bounds_for_resize(Some(&monitor), None);
+    let bounds = bounds_for_widget_geometry(Some(&monitor), None);
     let mode = state
         .drag_mode
         .lock()

@@ -7,7 +7,6 @@ import { consumeOrbClick, createOrbDragState, recordOrbDrag } from "../lib/orbGe
 import { useDevicePixelRatio, widgetScaleForSize } from "../lib/render";
 import { COMPACT_SIZE_RANGE, EXPANDED_SIZE_RANGE, getResizeEdge, resizeHasMoved, resizeSizeFromPointer, type ResizeEdge } from "../lib/resize";
 import type { Language, ProviderSnapshot, ToggleCorner, WidgetPreferences, WidgetSkin, WidgetTheme } from "../types";
-import { ProviderMark } from "./ProviderMark";
 import computerGptLogoUrl from "../../assets/computer-gpt-logo.svg";
 import computerOrbBaseUrl from "../../assets/computer-orb-base.svg";
 import computerOrbHealthyUrl from "../../assets/computer-orb-screen-healthy.svg";
@@ -248,9 +247,24 @@ export const QuotaCard = memo(function QuotaCard({
       .catch(() => setPreviewSize(previousSize));
   };
 
+  const toggleLayoutClass = !preferences.locked ? ` quota-card--toggle-${toggleCorner}` : "";
+  const resetCreditRow = (
+    <div className="reset-credit-row" onMouseDown={(event) => event.stopPropagation()}>
+      <span>{snapshot.resetCredits === null ? t.resetCreditUnknown : t.resetCredits(snapshot.resetCredits)}</span>
+      {snapshot.resetCredits !== null && snapshot.resetCredits > 0 ? (
+        <button type="button" className="reset-credit-button" onClick={() => setShowCreditTip((value) => !value)} aria-expanded={showCreditTip} aria-label={t.view}>{t.view}</button>
+      ) : null}
+      {showCreditTip ? (
+        <div className="reset-credit-tip" role="status" onMouseDown={(event) => event.stopPropagation()}>
+          {creditExpirations.length > 0 ? creditExpirations.map((item) => <p key={item}>{item}</p>) : <p>{t.noCreditExpiration}</p>}
+        </div>
+      ) : null}
+    </div>
+  );
+
   return (
     <main
-      className={`quota-card quota-card--${snapshot.status} quota-card--${tier}${theme ? ` quota-card--theme-${theme}` : ""}${skin === "blur" ? " quota-card--skin-blur" : ""}${skin === "computer" ? " quota-card--skin-computer" : ""}${resizeClass ? ` quota-resize--${resizeClass}` : ""}${activeResizeEdge ? " is-resizing" : ""}`}
+      className={`quota-card quota-card--${snapshot.status} quota-card--${tier}${theme ? ` quota-card--theme-${theme}` : ""}${skin === "blur" ? " quota-card--skin-blur" : ""}${skin === "computer" ? " quota-card--skin-computer" : ""}${resizeClass ? ` quota-resize--${resizeClass}` : ""}${activeResizeEdge ? " is-resizing" : ""}${toggleLayoutClass}`}
       style={resizeStyle}
       onMouseMove={(event) => { if (!activeResizeEdge) setHoveredResizeEdge(getResizeEdge(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect())); }}
       onMouseLeave={() => { if (!activeResizeEdge) setHoveredResizeEdge(null); }}
@@ -262,7 +276,7 @@ export const QuotaCard = memo(function QuotaCard({
       <span className="sr-only" aria-live="polite">{available && displayPercent !== null ? (displayingWeeklyAsPrimary ? t.weeklyAvailableLabel(displayPercent) : t.availableLabel(displayPercent)) : message}</span>
       {notice ? <div className="operation-notice" role="status">{notice}</div> : null}
       <header className="card-header" onMouseDown={(event) => { if (event.button === 0 && !getResizeEdge(event.clientX, event.clientY, event.currentTarget.parentElement?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect()) && !isExcludedResizeTarget(event.target)) void onDrag(); }}>
-        <div>
+        <div className={`card-identity${displayingWeeklyAsPrimary ? " card-identity--weekly" : ""}`}>
           <p className="eyebrow">{skin === "computer" ? "codex·plus" : `${snapshot.displayName} · ${snapshot.plan ?? t.accountFallback}`}</p>
           {snapshot.status !== "stale" ? <p className="updated">{displayingWeeklyAsPrimary ? t.weeklyShortRemaining : t.shortRemaining}</p> : null}
         </div>
@@ -296,21 +310,13 @@ export const QuotaCard = memo(function QuotaCard({
           <p className="reset-time">{formatResetTime(displayWindow?.resetsAt ?? null, new Date(), language)}{displayWindow?.resetsAt ? ` · ${formatDateTime(displayWindow.resetsAt, language)}` : ""}</p>
           <footer className="card-footer">
             <div className="weekly-metric">
-              {displayingWeeklyAsPrimary ? <p className="weekly-note"><Info weight="bold" aria-hidden="true" />{t.shortWindowUnavailable}</p> : <p>{t.weeklyUntil(formatResetDate(snapshot.weeklyWindow?.resetsAt ?? null, language))}</p>}
+              {displayingWeeklyAsPrimary
+                ? <div className="weekly-label-row"><p className="weekly-note"><Info weight="bold" aria-hidden="true" />{t.shortWindowUnavailable}</p>{resetCreditRow}</div>
+                : <p>{t.weeklyUntil(formatResetDate(snapshot.weeklyWindow?.resetsAt ?? null, language))}</p>}
               <strong className={displayingWeeklyAsPrimary ? "weekly-value--unavailable" : undefined}>{displayingWeeklyAsPrimary ? "--" : weekly ?? "--"}<small>{displayingWeeklyAsPrimary || weekly === null ? "" : "%"}</small></strong>
-              <div className="reset-credit-row" onMouseDown={(event) => event.stopPropagation()}>
-                <span>{snapshot.resetCredits === null ? t.resetCreditUnknown : t.resetCredits(snapshot.resetCredits)}</span>
-                {snapshot.resetCredits !== null && snapshot.resetCredits > 0 ? (
-                  <button type="button" className="reset-credit-button" onClick={() => setShowCreditTip((value) => !value)} aria-expanded={showCreditTip} aria-label={t.view}>{t.view}</button>
-                ) : null}
-              </div>
-              {showCreditTip ? (
-                <div className="reset-credit-tip" role="status" onMouseDown={(event) => event.stopPropagation()}>
-                  {creditExpirations.length > 0 ? creditExpirations.map((item) => <p key={item}>{item}</p>) : <p>{t.noCreditExpiration}</p>}
-                </div>
-              ) : null}
+              {!displayingWeeklyAsPrimary ? resetCreditRow : null}
             </div>
-            {skin === "blur" ? null : skin === "computer" ? <div className="computer-gpt-mark"><img src={computerGptLogoUrl} alt="GPT" /></div> : <ProviderMark />}
+            {skin === "computer" ? <div className="computer-gpt-mark"><img src={computerGptLogoUrl} alt="GPT" /></div> : null}
           </footer>
         </>
       ) : (

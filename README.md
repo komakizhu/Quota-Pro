@@ -11,6 +11,7 @@ A lightweight Windows/macOS desktop widget that keeps your Codex quota visible f
 - Uses a padded macOS app icon so the Dock artwork matches native icon proportions.
 - Offers small, medium, and large tray presets plus direct edge/corner resizing. Compact (48–144px) and expanded (220–460px) dimensions are saved independently and restored on restart.
 - Uses a manually toggled compact orb and expanded card; hover never changes the window size. Move to any edge or corner to reveal the native resize cursor, then drag to resize while keeping the opposite edge fixed. A single edge click cancels without saving; double-click an edge or corner to restore the current mode's default size (72px orb or 306px card).
+- Keeps the active expand/collapse button anchored under the orb's center, choosing the nearest card corner near screen edges so switching modes never requires moving the pointer, even at custom maximum sizes.
 - Lets you drag the compact orb or expanded header to any screen position and restores the compact anchor after toggling.
 - Indicates whether quota is currently being consumed.
 - Includes persistent expansion, always-on-top controls, and localized tray actions.

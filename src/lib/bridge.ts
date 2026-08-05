@@ -1,7 +1,7 @@
 import type { ProviderSnapshot, SupporterStatus, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin } from "../types";
 import type { ResizeEdge } from "./resize";
 
-const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
 
 function widgetSizeMarker(compactSize: number, expandedSize: number): WidgetSize {
   const presets: Array<[WidgetSize, number, number]> = [

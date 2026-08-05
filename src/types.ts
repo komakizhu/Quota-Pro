@@ -5,6 +5,7 @@ export type WidgetTheme = "light" | "dark";
 export type AppearancePreference = "system" | WidgetTheme;
 export type WidgetSkin = "default" | "blur" | "computer";
 export type WidgetMode = "compact" | "expanded";
+export type ToggleCorner = "nw" | "ne" | "sw" | "se";
 export type WidgetSize = "small" | "medium" | "large" | "custom";
 
 export interface SupporterStatus {
@@ -43,6 +44,7 @@ export interface WidgetPreferences {
   widgetSize: WidgetSize;
   compactSize: number;
   expandedSize: number;
+  toggleCorner: ToggleCorner;
   pinnedProvider: ProviderId | null;
   autoRotateSeconds: number;
   language: Language;

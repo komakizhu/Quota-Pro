@@ -54,6 +54,8 @@ pub struct WidgetPreferences {
     pub compact_size: f64,
     #[serde(default = "default_missing_size")]
     pub expanded_size: f64,
+    #[serde(default = "default_toggle_corner")]
+    pub toggle_corner: String,
     #[serde(default, skip_serializing)]
     pub stay_expanded: bool,
     pub pinned_provider: Option<String>,
@@ -102,6 +104,9 @@ fn default_compact_size() -> f64 {
 fn default_expanded_size() -> f64 {
     306.0
 }
+fn default_toggle_corner() -> String {
+    "ne".into()
+}
 
 fn preset_factor(widget_size: &str) -> f64 {
     match widget_size {
@@ -120,6 +125,7 @@ impl Default for WidgetPreferences {
             widget_size: default_widget_size(),
             compact_size: default_compact_size(),
             expanded_size: default_expanded_size(),
+            toggle_corner: default_toggle_corner(),
             stay_expanded: false,
             pinned_provider: None,
             auto_rotate_seconds: 12,
@@ -161,6 +167,9 @@ impl WidgetPreferences {
         }
         self.compact_size = self.compact_size.clamp(48.0, 144.0);
         self.expanded_size = self.expanded_size.clamp(220.0, 460.0);
+        if !matches!(self.toggle_corner.as_str(), "nw" | "ne" | "sw" | "se") {
+            self.toggle_corner = default_toggle_corner();
+        }
         self.stay_expanded = false;
         self.auto_rotate_seconds = self.auto_rotate_seconds.clamp(5, 300);
         if self.pinned_provider.as_deref() != Some("codex") {

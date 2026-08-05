@@ -7,9 +7,9 @@ import { copy, normalizeLanguage } from "./lib/i18n";
 import { mergeSnapshots } from "./lib/snapshots";
 import { DESKTOP_PALETTES } from "./lib/desktopPalette";
 import type { ResizeEdge } from "./lib/resize";
-import type { ProviderSnapshot, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin, WidgetTheme } from "./types";
+import type { ProviderSnapshot, ToggleCorner, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin, WidgetTheme } from "./types";
 
-const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
 const DEFAULT_COMPACT_SIZE = 72;
 const DEFAULT_EXPANDED_SIZE = 306;
 const COMPACT_MIN_SIZE = 48;
@@ -36,6 +36,7 @@ export default function App() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [consumingProviders, setConsumingProviders] = useState<Set<string>>(() => new Set());
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [pendingWidgetMode, setPendingWidgetMode] = useState<WidgetMode | null>(null);
   const [showUpdateFallback, setShowUpdateFallback] = useState(false);
   const [systemDark, setSystemDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
   const failures = useRef(0);
@@ -144,6 +145,7 @@ export default function App() {
       widgetSize,
       compactSize: Math.min(COMPACT_MAX_SIZE, Math.max(COMPACT_MIN_SIZE, compactSize)),
       expandedSize: Math.min(EXPANDED_MAX_SIZE, Math.max(EXPANDED_MIN_SIZE, expandedSize)),
+      toggleCorner: (value.toggleCorner === "nw" || value.toggleCorner === "ne" || value.toggleCorner === "sw" || value.toggleCorner === "se" ? value.toggleCorner : "ne") as ToggleCorner,
       language: normalizeLanguage(value.language),
     };
   }, []);
@@ -227,8 +229,6 @@ export default function App() {
   const cardStyle = {
     ...(paletteName ? DESKTOP_PALETTES[theme][paletteName] : {}),
     "--widget-scale": String((preferences.widgetMode === "compact" ? preferences.compactSize : preferences.expandedSize) / (preferences.widgetMode === "compact" ? DEFAULT_COMPACT_SIZE : DEFAULT_EXPANDED_SIZE)),
-    "--computer-orb-scale": String((preferences.compactSize + 8) / 72),
-    "--computer-orb-margin": `${(preferences.compactSize - 64) / 2}px`,
   } as CSSProperties;
 
   const savePreferences = useCallback((next: WidgetPreferences) => {
@@ -239,8 +239,9 @@ export default function App() {
   }, [operation.settingsFailed, preferences]);
 
   const changeWidgetMode = useCallback(async (mode: WidgetMode) => {
+    if (pendingWidgetMode || mode === preferences.widgetMode) return;
     const previous = preferences;
-    setPreferences({ ...preferences, widgetMode: mode });
+    setPendingWidgetMode(mode);
     setOperationError(null);
     try {
       const saved = await setWidgetMode(mode);
@@ -248,8 +249,10 @@ export default function App() {
     } catch {
       setPreferences(previous);
       setOperationError(mode === "expanded" ? operation.expandFailed : operation.collapseFailed);
+    } finally {
+      setPendingWidgetMode(null);
     }
-  }, [normalizePreferences, operation.collapseFailed, operation.expandFailed, preferences]);
+  }, [normalizePreferences, operation.collapseFailed, operation.expandFailed, pendingWidgetMode, preferences]);
 
   const beginResize = useCallback((mode: WidgetMode, edge: ResizeEdge) => beginWidgetResize(mode, edge), []);
   const previewResize = useCallback((size: number) => previewWidgetResize(size), []);
@@ -281,7 +284,7 @@ export default function App() {
   }, [normalizePreferences, operation.resizeFailed, preferences]);
 
   if (preferences.widgetMode === "compact") {
-    return <QuotaOrb snapshot={current} language={language} onExpand={() => { void refresh(true); void changeWidgetMode("expanded"); }} onDrag={() => startDragging()} onResizeStart={(edge) => beginResize("compact", edge)} onResizePreview={previewResize} onResizeCommit={(size) => commitResize("compact", size)} onResizeCancel={cancelWidgetResize} onResizeReset={() => resetResize("compact")} resizeSize={preferences.compactSize} theme={theme} skin={skin} style={cardStyle} />;
+    return <QuotaOrb snapshot={current} language={language} onExpand={() => { if (!pendingWidgetMode) { void refresh(true); void changeWidgetMode("expanded"); } }} onDrag={() => startDragging()} onResizeStart={(edge) => beginResize("compact", edge)} onResizePreview={previewResize} onResizeCommit={(size) => commitResize("compact", size)} onResizeCancel={cancelWidgetResize} onResizeReset={() => resetResize("compact")} resizeSize={preferences.compactSize} theme={theme} skin={skin} style={cardStyle} />;
   }
 
   return (
@@ -293,6 +296,7 @@ export default function App() {
       onNext={() => setActiveIndex((value) => (value + 1) % snapshots.length)}
       onTogglePin={() => savePreferences({ ...preferences, pinnedProvider: preferences.pinnedProvider ? null : current.provider })}
       onCollapse={() => { void changeWidgetMode("compact"); }}
+      toggleCorner={preferences.toggleCorner}
       onLock={() => { setOperationError(null); void setAlwaysOnTop(!preferences.alwaysOnTop).then((value) => setPreferences({ ...DEFAULT_PREFS, ...value, language: normalizeLanguage(value.language) })).catch(() => setOperationError(operation.alwaysOnTopFailed)); }}
       onDrag={() => startDragging()}
       onResizeStart={(edge) => beginResize("expanded", edge)}

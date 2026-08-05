@@ -5,7 +5,7 @@ import { blurProgressSegments } from "../lib/blurSkin";
 import { copy, normalizeLanguage } from "../lib/i18n";
 import { consumeOrbClick, createOrbDragState, recordOrbDrag } from "../lib/orbGesture";
 import { COMPACT_SIZE_RANGE, EXPANDED_SIZE_RANGE, getResizeEdge, resizeHasMoved, resizeSizeFromPointer, type ResizeEdge } from "../lib/resize";
-import type { Language, ProviderSnapshot, WidgetPreferences, WidgetSkin, WidgetTheme } from "../types";
+import type { Language, ProviderSnapshot, ToggleCorner, WidgetPreferences, WidgetSkin, WidgetTheme } from "../types";
 import { ProviderMark } from "./ProviderMark";
 import computerGptLogoUrl from "../../assets/computer-gpt-logo.svg";
 import computerOrbBaseUrl from "../../assets/computer-orb-base.svg";
@@ -27,6 +27,7 @@ interface Props {
   onTogglePin: () => void;
   onLock: () => void;
   onCollapse: () => void;
+  toggleCorner: ToggleCorner;
   onDrag: () => void | Promise<void>;
   onResizeStart?: (edge: ResizeEdge) => Promise<void>;
   onResizePreview?: (size: number) => void;
@@ -103,6 +104,7 @@ export const QuotaCard = memo(function QuotaCard({
   onTogglePin: _onTogglePin,
   onLock,
   onCollapse,
+  toggleCorner,
   onDrag,
   onResizeStart,
   onResizePreview,
@@ -267,14 +269,16 @@ export const QuotaCard = memo(function QuotaCard({
             {providerCount > 1 ? <button onClick={onPrevious} aria-label={t.servicePrevious}><ArrowUp /></button> : null}
             {providerCount > 1 ? <button onClick={onNext} aria-label={t.serviceNext}><ArrowDown /></button> : null}
             <span className={`usage-indicator usage-indicator--${indicatorState}`} role="status" aria-label={indicatorLabel} title={indicatorLabel}><i /></span>
-            <button className="expand-button expand-button--active" onClick={onCollapse} aria-label={t.collapseWidget} title={t.collapseWidget}>
-              <ArrowsInSimple weight="bold" />
-            </button>
             <button className={preferences.alwaysOnTop ? "pin-button pin-button--active" : "pin-button"} onClick={onLock} aria-pressed={preferences.alwaysOnTop} aria-label={preferences.alwaysOnTop ? t.pinOff : t.pinOn} title={preferences.alwaysOnTop ? t.pinOff : t.pinOn}>
               {preferences.alwaysOnTop ? <PushPin weight="fill" /> : <PushPinSlash />}
             </button>
           </nav>
         ) : null}
+      {!preferences.locked ? (
+        <button className={`widget-toggle widget-toggle--${toggleCorner}`} onMouseDown={(event) => event.stopPropagation()} onClick={onCollapse} aria-label={t.collapseWidget} title={t.collapseWidget}>
+          <ArrowsInSimple weight="bold" />
+        </button>
+      ) : null}
       </header>
 
       {available && displayPercent !== null ? (
@@ -522,7 +526,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
 
   return (
     <main
-      style={{ ...style, "--widget-scale": String(previewSize / 72), "--computer-orb-scale": String((previewSize + 8) / 72), "--computer-orb-margin": `${(previewSize - 64) / 2}px` } as CSSProperties}
+      style={{ ...style, "--widget-scale": String(previewSize / 72) } as CSSProperties}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={() => {
         if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);

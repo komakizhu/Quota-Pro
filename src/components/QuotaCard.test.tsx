@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProviderSnapshot } from "../types";
-import { QuotaOrb } from "./QuotaCard";
+import type { ProviderSnapshot, WidgetPreferences } from "../types";
+import { QuotaCard, QuotaOrb } from "./QuotaCard";
 
 const snapshot: ProviderSnapshot = {
   provider: "codex",
@@ -14,6 +14,25 @@ const snapshot: ProviderSnapshot = {
   updatedAt: new Date().toISOString(),
   status: "ok",
   message: null,
+};
+
+const preferences: WidgetPreferences = {
+  locked: false,
+  alwaysOnTop: true,
+  widgetMode: "expanded",
+  widgetSize: "custom",
+  compactSize: 144,
+  expandedSize: 460,
+  toggleCorner: "nw",
+  pinnedProvider: null,
+  autoRotateSeconds: 12,
+  language: "en",
+  appearance: "light",
+  license: null,
+  licenses: [],
+  unlockedSkin: null,
+  unlockedSkins: [],
+  selectedSkin: "default",
 };
 
 function renderOrb() {
@@ -129,5 +148,29 @@ describe("QuotaOrb drag and click gestures", () => {
     fireEvent.click(orb);
 
     expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("QuotaCard mode toggle", () => {
+  it("renders the collapse control in the active corner without moving it into the header actions", () => {
+    const onCollapse = vi.fn();
+    render(
+      <QuotaCard
+        snapshot={snapshot}
+        preferences={preferences}
+        providerCount={1}
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+        onTogglePin={vi.fn()}
+        onLock={vi.fn()}
+        onCollapse={onCollapse}
+        toggleCorner="nw"
+        onDrag={vi.fn()}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Collapse widget" });
+    expect(button.className).toContain("widget-toggle--nw");
+    fireEvent.click(button);
+    expect(onCollapse).toHaveBeenCalledTimes(1);
   });
 });

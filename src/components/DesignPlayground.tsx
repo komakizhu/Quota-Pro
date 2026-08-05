@@ -16,7 +16,7 @@ const base: ProviderSnapshot = {
   weeklyWindow: { remainingPercent: 42, resetsAt: new Date(Date.now() + 3.2 * 86_400_000).toISOString(), windowSeconds: 604_800 },
   resetCredits: 1, resetCreditExpiresAt: [], updatedAt: new Date().toISOString(), status: "ok", message: null,
 };
-const preferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "expanded", widgetSize: "medium", compactSize: 72, expandedSize: 306, pinnedProvider: "codex", autoRotateSeconds: 12, language: "en", appearance: "system", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const preferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "expanded", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: "codex", autoRotateSeconds: 12, language: "en", appearance: "system", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
 const defaults: Controls = { radius: 38, numberSize: 64, progressHeight: 6, brightness: 100, motion: 18 };
 const names: DesktopPaletteName[] = ["healthy", "caution", "critical", "unavailable", "stale", "signed_out"];
 const modes: Array<[Mode, string]> = [[74, "healthy"], [35, "caution"], [8, "critical"], ["weekly", "weekly"], ["healthy-orb", "healthyOrb"], ["caution-orb", "cautionOrb"], ["critical-orb", "criticalOrb"], ["weekly-orb", "weeklyOrb"], ["unavailable", "unavailable"], ["stale", "stale"], ["signed_out", "signedOut"], ["unavailable-orb", "unavailableOrb"], ["stale-orb", "staleOrb"], ["signed_out-orb", "signedOutOrb"]];
@@ -83,7 +83,7 @@ export function DesignPlayground() {
   const selectPalette = (nextTheme: WidgetTheme, name: DesktopPaletteName) => { setTheme(nextTheme); setMode(modeForPalette(name)); };
   const render = (item: ProviderSnapshot, skin: WidgetSkin = "default") => isOrb
     ? <QuotaOrb snapshot={item} language={language} onDrag={() => {}} onExpand={() => {}} theme={theme} skin={skin} style={style(item)} />
-    : <QuotaCard snapshot={item} preferences={{ ...preferences, language }} providerCount={1} onPrevious={() => {}} onNext={() => {}} onTogglePin={() => {}} onLock={() => {}} onCollapse={() => {}} onDrag={() => {}} theme={theme} skin={skin} style={style(item)} />;
+    : <QuotaCard snapshot={item} preferences={{ ...preferences, language }} providerCount={1} onPrevious={() => {}} onNext={() => {}} onTogglePin={() => {}} onLock={() => {}} onCollapse={() => {}} toggleCorner="ne" onDrag={() => {}} theme={theme} skin={skin} style={style(item)} />;
 
   return <main className={`design-workbench design-workbench--${theme}`}>
     <section className="design-stage" aria-label={t.widget}>

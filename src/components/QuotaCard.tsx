@@ -4,6 +4,7 @@ import { clampPercent, formatDateTime, formatResetDate, formatResetTime, quotaTi
 import { blurProgressSegments } from "../lib/blurSkin";
 import { copy, normalizeLanguage } from "../lib/i18n";
 import { consumeOrbClick, createOrbDragState, recordOrbDrag } from "../lib/orbGesture";
+import { useDevicePixelRatio, widgetScaleForSize } from "../lib/render";
 import { COMPACT_SIZE_RANGE, EXPANDED_SIZE_RANGE, getResizeEdge, resizeHasMoved, resizeSizeFromPointer, type ResizeEdge } from "../lib/resize";
 import type { Language, ProviderSnapshot, ToggleCorner, WidgetPreferences, WidgetSkin, WidgetTheme } from "../types";
 import { ProviderMark } from "./ProviderMark";
@@ -124,6 +125,7 @@ export const QuotaCard = memo(function QuotaCard({
   const [hoveredResizeEdge, setHoveredResizeEdge] = useState<ResizeEdge | null>(null);
   const [activeResizeEdge, setActiveResizeEdge] = useState<ResizeEdge | null>(null);
   const [previewSize, setPreviewSize] = useState(resizeSize);
+  const devicePixelRatio = useDevicePixelRatio();
   const resizeCleanup = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (!activeResizeEdge) setPreviewSize(resizeSize);
@@ -156,7 +158,7 @@ export const QuotaCard = memo(function QuotaCard({
   }), [language, snapshot.resetCreditExpiresAt, t]);
 
   const resizeClass = activeResizeEdge ?? hoveredResizeEdge;
-  const resizeStyle = { ...style, "--widget-scale": String(previewSize / 306) } as CSSProperties;
+  const resizeStyle = { ...style, "--widget-scale": String(widgetScaleForSize(previewSize, 306, devicePixelRatio)) } as CSSProperties;
   const isExcludedResizeTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, nav"));
   const startResize = (event: ReactMouseEvent<HTMLElement>): boolean => {
     if (event.button !== 0 || isExcludedResizeTarget(event.target)) return false;
@@ -335,6 +337,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
   const [hoveredResizeEdge, setHoveredResizeEdge] = useState<ResizeEdge | null>(null);
   const [activeResizeEdge, setActiveResizeEdge] = useState<ResizeEdge | null>(null);
   const [previewSize, setPreviewSize] = useState(resizeSize);
+  const devicePixelRatio = useDevicePixelRatio();
   const idleTimer = useRef<number | null>(null);
   const dragCleanup = useRef<(() => void) | null>(null);
   const resizeCleanup = useRef<(() => void) | null>(null);
@@ -526,7 +529,7 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
 
   return (
     <main
-      style={{ ...style, "--widget-scale": String(previewSize / 72) } as CSSProperties}
+      style={{ ...style, "--widget-scale": String(widgetScaleForSize(previewSize, 72, devicePixelRatio)) } as CSSProperties}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={() => {
         if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
@@ -544,28 +547,30 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
       className={`quota-orb quota-card--${snapshot.status} quota-card--${tier}${theme ? ` quota-orb--theme-${theme}` : ""}${skin === "blur" ? " quota-orb--skin-blur" : ""}${skin === "computer" ? " quota-orb--skin-computer" : ""}${displayingWeeklyAsPrimary ? " quota-orb--weekly" : ""}${idle ? " quota-orb--idle" : ""}${(activeResizeEdge ?? hoveredResizeEdge) ? ` quota-resize--${activeResizeEdge ?? hoveredResizeEdge}` : ""}${activeResizeEdge ? " is-resizing" : ""}`}
     >
       <div className="aurora" aria-hidden="true" />
-      {skin === "computer" ? <img className="computer-orb-base" src={computerOrbBaseUrl} alt="" aria-hidden="true" /> : null}
-      {skin === "computer" ? <img className="computer-orb-screen" src={available ? computerScreen : computerOrbErrorScreenUrl} alt="" aria-hidden="true" /> : null}
-      {available && displayingWeeklyAsPrimary && skin !== "computer" ? (
-        <span className="orb-weekly-badge" aria-hidden="true">
-          <svg viewBox="0 0 55 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M7.3687 52.2894C13.0674 47.8486 17 38.4172 17 27.5C17 16.5828 13.0674 7.15141 7.3687 2.71063C3.88364 -0.00516105 0 3.58172 0 8L0 47C0 51.4183 3.88364 55.0052 7.3687 52.2894Z" fill="currentColor" transform="matrix(0 1 -1 0 55 0)" />
-          </svg>
-          <b>W</b>
-        </span>
-      ) : null}
-      {available ? (
-        <section className="orb-metric">
-          <span>{displayPercent}</span>
-          {skin !== "computer" ? <small>%</small> : null}
-        </section>
-      ) : (
-        <section className="orb-unavailable">
-          {skin === "computer"
-            ? <img className={`computer-orb-error-symbol computer-orb-error-symbol--${snapshot.status}`} src={computerOrbErrorSymbol} alt="" aria-hidden="true" />
-            : <StatusIcon status={snapshot.status} />}
-        </section>
-      )}
+      <div className="orb-content">
+        {skin === "computer" ? <img className="computer-orb-base" src={computerOrbBaseUrl} alt="" aria-hidden="true" /> : null}
+        {skin === "computer" ? <img className="computer-orb-screen" src={available ? computerScreen : computerOrbErrorScreenUrl} alt="" aria-hidden="true" /> : null}
+        {available && displayingWeeklyAsPrimary && skin !== "computer" ? (
+          <span className="orb-weekly-badge" aria-hidden="true">
+            <svg viewBox="0 0 55 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M7.3687 52.2894C13.0674 47.8486 17 38.4172 17 27.5C17 16.5828 13.0674 7.15141 7.3687 2.71063C3.88364 -0.00516105 0 3.58172 0 8L0 47C0 51.4183 3.88364 55.0052 7.3687 52.2894Z" fill="currentColor" transform="matrix(0 1 -1 0 55 0)" />
+            </svg>
+            <b>W</b>
+          </span>
+        ) : null}
+        {available ? (
+          <section className="orb-metric">
+            <span>{displayPercent}</span>
+            {skin !== "computer" ? <small>%</small> : null}
+          </section>
+        ) : (
+          <section className="orb-unavailable">
+            {skin === "computer"
+              ? <img className={`computer-orb-error-symbol computer-orb-error-symbol--${snapshot.status}`} src={computerOrbErrorSymbol} alt="" aria-hidden="true" />
+              : <StatusIcon status={snapshot.status} />}
+          </section>
+        )}
+      </div>
     </main>
   );
 });

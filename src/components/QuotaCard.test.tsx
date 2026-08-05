@@ -149,6 +149,12 @@ describe("QuotaOrb drag and click gestures", () => {
 
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps the orb content in a separate compositing layer", () => {
+    const { orb } = renderOrb();
+    expect(orb.querySelector(".orb-content")).not.toBeNull();
+    expect(orb.querySelector(".orb-metric")?.parentElement?.className).toBe("orb-content");
+  });
 });
 
 describe("QuotaCard mode toggle", () => {

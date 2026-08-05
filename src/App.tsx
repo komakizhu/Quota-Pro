@@ -6,6 +6,7 @@ import { checkForAppUpdate, openReleasePage } from "./lib/appUpdate";
 import { copy, normalizeLanguage } from "./lib/i18n";
 import { mergeSnapshots } from "./lib/snapshots";
 import { DESKTOP_PALETTES } from "./lib/desktopPalette";
+import { useDevicePixelRatio, widgetScaleForSize } from "./lib/render";
 import type { ResizeEdge } from "./lib/resize";
 import type { ProviderSnapshot, ToggleCorner, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin, WidgetTheme } from "./types";
 
@@ -39,6 +40,7 @@ export default function App() {
   const [pendingWidgetMode, setPendingWidgetMode] = useState<WidgetMode | null>(null);
   const [showUpdateFallback, setShowUpdateFallback] = useState(false);
   const [systemDark, setSystemDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+  const devicePixelRatio = useDevicePixelRatio();
   const failures = useRef(0);
   const previousPrimary = useRef(new Map<string, number>());
   const consumptionTimers = useRef(new Map<string, number>());
@@ -228,7 +230,11 @@ export default function App() {
   // one another through CSS defaults or preview state.
   const cardStyle = {
     ...(paletteName ? DESKTOP_PALETTES[theme][paletteName] : {}),
-    "--widget-scale": String((preferences.widgetMode === "compact" ? preferences.compactSize : preferences.expandedSize) / (preferences.widgetMode === "compact" ? DEFAULT_COMPACT_SIZE : DEFAULT_EXPANDED_SIZE)),
+    "--widget-scale": String(widgetScaleForSize(
+      preferences.widgetMode === "compact" ? preferences.compactSize : preferences.expandedSize,
+      preferences.widgetMode === "compact" ? DEFAULT_COMPACT_SIZE : DEFAULT_EXPANDED_SIZE,
+      devicePixelRatio,
+    )),
   } as CSSProperties;
 
   const savePreferences = useCallback((next: WidgetPreferences) => {

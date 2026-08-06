@@ -37,11 +37,11 @@ const EXPANDED_MIN_LOGICAL_SIZE: f64 = 220.0;
 const EXPANDED_MAX_LOGICAL_SIZE: f64 = 460.0;
 const EDGE_SAFE_INSET_LOGICAL: f64 = 4.0;
 const POSITION_EPSILON: u32 = 2;
-// The dedicated mode button is placed 30px from the active card edge and is
+// The dedicated mode button is placed 24px from the active card edge and is
 // 25px square at the default 306px visual size. Keeping its center inset in
 // native geometry makes the button and the compact orb share one anchor even
 // when the card is resized.
-const TOGGLE_BUTTON_CENTER_INSET_LOGICAL: f64 = 42.5;
+const TOGGLE_BUTTON_CENTER_INSET_LOGICAL: f64 = 36.5;
 
 #[derive(Clone, Copy)]
 struct WidgetRect {
@@ -1753,7 +1753,7 @@ mod geometry_tests {
             PhysicalSize::new(1920, 1040),
             4,
         );
-        assert_eq!(position, PhysicalPosition::new(492, 413));
+        assert_eq!(position, PhysicalPosition::new(486, 419));
         let compact_center = compact_center_offset(compact.size, 4);
         let collapse_button =
             collapse_button_center_offset(PhysicalSize::new(314, 314), 4, ToggleCorner::NorthEast);

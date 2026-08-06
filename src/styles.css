@@ -159,10 +159,10 @@ button { font: inherit; }
 .widget-toggle svg { width: calc(13px * var(--widget-scale)); height: calc(13px * var(--widget-scale)); }
 .widget-toggle:hover { color: #2f6ead; background: #fff; }
 .widget-toggle:active { transform: scale(.94); }
-.widget-toggle--nw { top: calc(30px * var(--widget-scale)); left: calc(30px * var(--widget-scale)); }
-.widget-toggle--ne { top: calc(30px * var(--widget-scale)); right: calc(30px * var(--widget-scale)); }
-.widget-toggle--sw { bottom: calc(30px * var(--widget-scale)); left: calc(30px * var(--widget-scale)); }
-.widget-toggle--se { right: calc(30px * var(--widget-scale)); bottom: calc(30px * var(--widget-scale)); }
+.widget-toggle--nw { top: calc(24px * var(--widget-scale)); left: calc(24px * var(--widget-scale)); }
+.widget-toggle--ne { top: calc(24px * var(--widget-scale)); right: calc(24px * var(--widget-scale)); }
+.widget-toggle--sw { bottom: calc(24px * var(--widget-scale)); left: calc(24px * var(--widget-scale)); }
+.widget-toggle--se { right: calc(24px * var(--widget-scale)); bottom: calc(24px * var(--widget-scale)); }
 .quota-card--theme-dark .widget-toggle { border-color: #6c9de0; color: #3979c2; background: rgba(255,255,255,.9); box-shadow: 0 0 0 1px rgba(255,255,255,.32), 0 4px 12px rgba(0,0,0,.26); }
 .quota-card--theme-dark .widget-toggle:hover { color: #2f6ead; background: #fff; }
 
@@ -174,7 +174,6 @@ button { font: inherit; }
 .reset-time { margin-top: calc(7px * var(--widget-scale)); font-size: calc(12px * var(--widget-scale)); color: rgba(17,20,27,.52); letter-spacing: .05em; }
 
 .card-footer { position: absolute; left: calc(30px * var(--widget-scale)); right: calc(30px * var(--widget-scale)); bottom: calc(26px * var(--widget-scale)); display: flex; align-items: flex-end; justify-content: space-between; }
-.quota-card--toggle-sw .card-footer { padding-left: calc(36px * var(--widget-scale)); }
 .quota-card--toggle-se .computer-gpt-mark { right: calc(37px * var(--widget-scale)); }
 .weekly-label-row { display: flex; align-items: center; gap: calc(8px * var(--widget-scale)); min-width: 0; flex-wrap: wrap; row-gap: calc(4px * var(--widget-scale)); }
 .weekly-metric p { font-size: calc(12px * var(--widget-scale)); font-weight: 300; letter-spacing: .08em; }

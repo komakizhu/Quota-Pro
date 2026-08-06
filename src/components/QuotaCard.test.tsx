@@ -157,6 +157,27 @@ describe("QuotaOrb drag and click gestures", () => {
   });
 });
 
+it("marks every collapse corner for symmetric layout rules", () => {
+  for (const corner of ["nw", "ne", "sw", "se"] as const) {
+    render(
+      <QuotaCard
+        snapshot={snapshot}
+        preferences={{ ...preferences, toggleCorner: corner }}
+        providerCount={1}
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+        onTogglePin={vi.fn()}
+        onLock={vi.fn()}
+        onCollapse={vi.fn()}
+        toggleCorner={corner}
+        onDrag={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("main").className).toContain(`quota-card--toggle-${corner}`);
+    cleanup();
+  }
+});
+
 describe("QuotaCard mode toggle", () => {
   it("renders the collapse control in the active corner without moving it into the header actions", () => {
     const onCollapse = vi.fn();

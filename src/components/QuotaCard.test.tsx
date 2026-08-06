@@ -175,7 +175,9 @@ describe("QuotaCard mode toggle", () => {
       />,
     );
     const button = screen.getByRole("button", { name: "Collapse widget" });
+    const pin = screen.getByRole("button", { name: "Disable always on top" });
     expect(button.className).toContain("widget-toggle--nw");
+    expect(pin.className).toContain("pin-button--active");
     expect(button.closest(".quota-card")?.className).toContain("quota-card--toggle-nw");
     expect(screen.getByText("0 reset credits").parentElement?.className).toContain("reset-credit-row");
     expect(screen.queryByRole("img", { name: "GPT" })).toBeNull();

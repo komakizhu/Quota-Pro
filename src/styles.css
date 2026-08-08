@@ -233,7 +233,8 @@ button { font: inherit; }
   place-items: center;
   overflow: hidden;
   border: 1px solid rgba(79,103,134,.14);
-  border-radius: calc(24px * var(--widget-scale));
+  --orb-corner-radius: calc(24px * var(--widget-scale));
+  border-radius: var(--orb-corner-radius);
   color: #17191f;
   --orb-surface: rgba(237,243,248,.82);
   --orb-backdrop-blur: 14px;

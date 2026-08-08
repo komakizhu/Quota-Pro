@@ -4,7 +4,7 @@ import { clampPercent, formatDateTime, formatResetDate, formatResetTime, quotaTi
 import { blurProgressSegments } from "../lib/blurSkin";
 import { copy, normalizeLanguage } from "../lib/i18n";
 import { consumeOrbClick, createOrbDragState, recordOrbDrag } from "../lib/orbGesture";
-import { useDevicePixelRatio, widgetScaleForSize } from "../lib/render";
+import { orbCornerRadiusForSize, useDevicePixelRatio, widgetScaleForSize } from "../lib/render";
 import { COMPACT_SIZE_RANGE, EXPANDED_SIZE_RANGE, getResizeEdge, resizeHasMoved, resizeSizeFromPointer, type ResizeEdge } from "../lib/resize";
 import type { Language, ProviderSnapshot, ToggleCorner, WidgetPreferences, WidgetSkin, WidgetTheme } from "../types";
 import computerGptLogoUrl from "../../assets/computer-gpt-logo.svg";
@@ -533,9 +533,16 @@ export const QuotaOrb = memo(function QuotaOrb({ snapshot, onDrag, onExpand, onR
     onExpand();
   };
 
+  const orbScale = widgetScaleForSize(previewSize, 72, devicePixelRatio);
+  const orbStyle = {
+    ...style,
+    "--widget-scale": String(orbScale),
+    ...(skin === "default" ? { "--orb-corner-radius": `${orbCornerRadiusForSize(previewSize, devicePixelRatio)}px` } : {}),
+  } as CSSProperties;
+
   return (
     <main
-      style={{ ...style, "--widget-scale": String(widgetScaleForSize(previewSize, 72, devicePixelRatio)) } as CSSProperties}
+      style={orbStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={() => {
         if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);

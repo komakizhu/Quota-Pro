@@ -22,6 +22,20 @@ export function widgetScaleForSize(size: number, baseSize: number, devicePixelRa
   return snapLogicalSizeToDevicePixels(size, devicePixelRatio) / baseSize;
 }
 
+/**
+ * The default orb follows the Dock-like proportional corner treatment. Keep
+ * the radius on the same physical-pixel grid as the orb so the outer edge
+ * does not land between WebView pixels on Retina displays.
+ */
+export const DEFAULT_ORB_CORNER_RADIUS = 18;
+
+export function orbCornerRadiusForSize(size: number, devicePixelRatio = readDevicePixelRatio()): number {
+  return snapLogicalSizeToDevicePixels(
+    DEFAULT_ORB_CORNER_RADIUS * widgetScaleForSize(size, 72, devicePixelRatio),
+    devicePixelRatio,
+  );
+}
+
 /** Re-render when macOS moves the window between displays with different DPRs. */
 export function useDevicePixelRatio(): number {
   const [devicePixelRatio, setDevicePixelRatio] = useState(readDevicePixelRatio);

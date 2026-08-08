@@ -16,6 +16,12 @@ const snapshot: ProviderSnapshot = {
   message: null,
 };
 
+const weeklyPrimarySnapshot: ProviderSnapshot = {
+  ...snapshot,
+  shortWindow: null,
+  weeklyWindow: { remainingPercent: 43, resetsAt: null, windowSeconds: 604_800 },
+};
+
 const preferences: WidgetPreferences = {
   locked: false,
   alwaysOnTop: true,
@@ -176,6 +182,83 @@ it("marks every collapse corner for symmetric layout rules", () => {
     expect(screen.getByRole("main").className).toContain(`quota-card--toggle-${corner}`);
     cleanup();
   }
+});
+
+it("marks only the southwest weekly-primary layout for bottom-text alignment", () => {
+  const onCollapse = vi.fn();
+  render(
+    <QuotaCard
+      snapshot={weeklyPrimarySnapshot}
+      preferences={{ ...preferences, toggleCorner: "sw" }}
+      providerCount={1}
+      onPrevious={vi.fn()}
+      onNext={vi.fn()}
+      onTogglePin={vi.fn()}
+      onLock={vi.fn()}
+      onCollapse={onCollapse}
+      toggleCorner="sw"
+      onDrag={vi.fn()}
+    />,
+  );
+  const southwestCard = screen.getByRole("main");
+  expect(southwestCard.className).toContain("quota-card--toggle-sw");
+  expect(southwestCard.className).toContain("quota-card--toggle-sw-weekly-primary");
+  expect(southwestCard.querySelector(".weekly-label-row .weekly-note")).not.toBeNull();
+  expect(southwestCard.querySelector(".weekly-metric strong")?.textContent).toBe("--");
+  fireEvent.click(screen.getByRole("button", { name: "Collapse widget" }));
+  expect(onCollapse).toHaveBeenCalledTimes(1);
+  cleanup();
+
+  render(
+    <QuotaCard
+      snapshot={weeklyPrimarySnapshot}
+      preferences={{ ...preferences, toggleCorner: "se" }}
+      providerCount={1}
+      onPrevious={vi.fn()}
+      onNext={vi.fn()}
+      onTogglePin={vi.fn()}
+      onLock={vi.fn()}
+      onCollapse={vi.fn()}
+      toggleCorner="se"
+      onDrag={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("main").className).not.toContain("quota-card--toggle-sw-weekly-primary");
+  cleanup();
+
+  render(
+    <QuotaCard
+      snapshot={snapshot}
+      preferences={{ ...preferences, toggleCorner: "sw" }}
+      providerCount={1}
+      onPrevious={vi.fn()}
+      onNext={vi.fn()}
+      onTogglePin={vi.fn()}
+      onLock={vi.fn()}
+      onCollapse={vi.fn()}
+      toggleCorner="sw"
+      onDrag={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("main").className).not.toContain("quota-card--toggle-sw-weekly-primary");
+  cleanup();
+
+  render(
+    <QuotaCard
+      snapshot={weeklyPrimarySnapshot}
+      preferences={{ ...preferences, toggleCorner: "sw" }}
+      providerCount={1}
+      onPrevious={vi.fn()}
+      onNext={vi.fn()}
+      onTogglePin={vi.fn()}
+      onLock={vi.fn()}
+      onCollapse={vi.fn()}
+      toggleCorner="sw"
+      onDrag={vi.fn()}
+      skin="computer"
+    />,
+  );
+  expect(screen.getByRole("main").className).not.toContain("quota-card--toggle-sw-weekly-primary");
 });
 
 describe("QuotaCard mode toggle", () => {

@@ -248,6 +248,9 @@ export const QuotaCard = memo(function QuotaCard({
   };
 
   const toggleLayoutClass = !preferences.locked ? ` quota-card--toggle-${toggleCorner}` : "";
+  const weeklyPrimaryLayoutClass = !preferences.locked && skin !== "computer" && displayingWeeklyAsPrimary && toggleCorner === "sw"
+    ? " quota-card--toggle-sw-weekly-primary"
+    : "";
   const resetCreditRow = (
     <div className="reset-credit-row" onMouseDown={(event) => event.stopPropagation()}>
       <span>{snapshot.resetCredits === null ? t.resetCreditUnknown : t.resetCredits(snapshot.resetCredits)}</span>
@@ -264,7 +267,7 @@ export const QuotaCard = memo(function QuotaCard({
 
   return (
     <main
-      className={`quota-card quota-card--${snapshot.status} quota-card--${tier}${theme ? ` quota-card--theme-${theme}` : ""}${skin === "blur" ? " quota-card--skin-blur" : ""}${skin === "computer" ? " quota-card--skin-computer" : ""}${resizeClass ? ` quota-resize--${resizeClass}` : ""}${activeResizeEdge ? " is-resizing" : ""}${toggleLayoutClass}`}
+      className={`quota-card quota-card--${snapshot.status} quota-card--${tier}${theme ? ` quota-card--theme-${theme}` : ""}${skin === "blur" ? " quota-card--skin-blur" : ""}${skin === "computer" ? " quota-card--skin-computer" : ""}${resizeClass ? ` quota-resize--${resizeClass}` : ""}${activeResizeEdge ? " is-resizing" : ""}${toggleLayoutClass}${weeklyPrimaryLayoutClass}`}
       style={resizeStyle}
       onMouseMove={(event) => { if (!activeResizeEdge) setHoveredResizeEdge(getResizeEdge(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect())); }}
       onMouseLeave={() => { if (!activeResizeEdge) setHoveredResizeEdge(null); }}

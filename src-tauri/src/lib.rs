@@ -37,11 +37,13 @@ const EXPANDED_MIN_LOGICAL_SIZE: f64 = 220.0;
 const EXPANDED_MAX_LOGICAL_SIZE: f64 = 460.0;
 const EDGE_SAFE_INSET_LOGICAL: f64 = 4.0;
 const POSITION_EPSILON: u32 = 2;
-// The dedicated mode button is placed 24px from the active card edge and is
-// 25px square at the default 306px visual size. Keeping its center inset in
-// native geometry makes the button and the compact orb share one anchor even
-// when the card is resized.
-const TOGGLE_BUTTON_CENTER_INSET_LOGICAL: f64 = 36.5;
+// The dedicated mode button is 25px square at the default 306px visual size.
+// Its center inset is kept in native geometry so the button and compact orb
+// share one anchor even when the card is resized. The southwest button has a
+// larger bottom inset so it clears the fallback `--` metric in the footer.
+const TOGGLE_BUTTON_EDGE_INSET_LOGICAL: f64 = 24.0;
+const TOGGLE_BUTTON_SIZE_LOGICAL: f64 = 25.0;
+const TOGGLE_BUTTON_SW_BOTTOM_INSET_LOGICAL: f64 = 56.0;
 
 #[derive(Clone, Copy)]
 struct WidgetRect {
@@ -355,14 +357,20 @@ fn collapse_button_center_offset(
 ) -> PhysicalPosition<i32> {
     let visual = visual_size(expanded_size, safe_inset);
     let scale = visual / EXPANDED_LOGICAL_SIZE;
-    let inset = TOGGLE_BUTTON_CENTER_INSET_LOGICAL * scale;
+    let edge_inset = TOGGLE_BUTTON_EDGE_INSET_LOGICAL * scale;
+    let button_half = TOGGLE_BUTTON_SIZE_LOGICAL * scale / 2.0;
+    let horizontal_inset = edge_inset + button_half;
+    let vertical_inset = match corner {
+        ToggleCorner::SouthWest => TOGGLE_BUTTON_SW_BOTTOM_INSET_LOGICAL * scale + button_half,
+        _ => edge_inset + button_half,
+    };
     let x = match corner {
-        ToggleCorner::NorthWest | ToggleCorner::SouthWest => inset,
-        ToggleCorner::NorthEast | ToggleCorner::SouthEast => visual - inset,
+        ToggleCorner::NorthWest | ToggleCorner::SouthWest => horizontal_inset,
+        ToggleCorner::NorthEast | ToggleCorner::SouthEast => visual - horizontal_inset,
     };
     let y = match corner {
-        ToggleCorner::NorthWest | ToggleCorner::NorthEast => inset,
-        ToggleCorner::SouthWest | ToggleCorner::SouthEast => visual - inset,
+        ToggleCorner::NorthWest | ToggleCorner::NorthEast => vertical_inset,
+        ToggleCorner::SouthWest | ToggleCorner::SouthEast => visual - vertical_inset,
     };
     PhysicalPosition::new(
         (safe_inset as f64 + x).round() as i32,
@@ -1765,6 +1773,32 @@ mod geometry_tests {
             PhysicalPosition::new(
                 position.x + collapse_button.x,
                 position.y + collapse_button.y
+            )
+        );
+    }
+
+    #[test]
+    fn southwest_toggle_clears_footer_metric_and_preserves_anchor() {
+        let toggle_center =
+            collapse_button_center_offset(PhysicalSize::new(314, 314), 4, ToggleCorner::SouthWest);
+        assert_eq!(toggle_center, PhysicalPosition::new(41, 242));
+
+        let compact = rect(720, 420, 80);
+        let expanded_position = expanded_position_from_anchor(
+            compact,
+            PhysicalSize::new(314, 314),
+            4,
+            ToggleCorner::SouthWest,
+        );
+        let compact_center = compact_center_offset(compact.size, 4);
+        assert_eq!(
+            PhysicalPosition::new(
+                compact.position.x + compact_center.x,
+                compact.position.y + compact_center.y,
+            ),
+            PhysicalPosition::new(
+                expanded_position.x + toggle_center.x,
+                expanded_position.y + toggle_center.y,
             )
         );
     }

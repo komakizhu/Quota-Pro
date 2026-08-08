@@ -42,6 +42,7 @@ const POSITION_EPSILON: u32 = 2;
 // share one anchor even when the card is resized. The southwest button has a
 // larger bottom inset so it clears the fallback `--` metric in the footer.
 const TOGGLE_BUTTON_EDGE_INSET_LOGICAL: f64 = 24.0;
+const TOGGLE_BUTTON_TOP_EDGE_INSET_LOGICAL: f64 = 30.0;
 const TOGGLE_BUTTON_SIZE_LOGICAL: f64 = 25.0;
 const TOGGLE_BUTTON_SW_BOTTOM_INSET_LOGICAL: f64 = 56.0;
 
@@ -357,13 +358,23 @@ fn collapse_button_center_offset(
 ) -> PhysicalPosition<i32> {
     let visual = visual_size(expanded_size, safe_inset);
     let scale = visual / EXPANDED_LOGICAL_SIZE;
-    let edge_inset = TOGGLE_BUTTON_EDGE_INSET_LOGICAL * scale;
     let button_half = TOGGLE_BUTTON_SIZE_LOGICAL * scale / 2.0;
-    let horizontal_inset = edge_inset + button_half;
-    let vertical_inset = match corner {
-        ToggleCorner::SouthWest => TOGGLE_BUTTON_SW_BOTTOM_INSET_LOGICAL * scale + button_half,
-        _ => edge_inset + button_half,
+    let (horizontal_edge_inset, vertical_edge_inset) = match corner {
+        ToggleCorner::NorthWest | ToggleCorner::NorthEast => (
+            TOGGLE_BUTTON_TOP_EDGE_INSET_LOGICAL,
+            TOGGLE_BUTTON_TOP_EDGE_INSET_LOGICAL,
+        ),
+        ToggleCorner::SouthWest => (
+            TOGGLE_BUTTON_EDGE_INSET_LOGICAL,
+            TOGGLE_BUTTON_SW_BOTTOM_INSET_LOGICAL,
+        ),
+        ToggleCorner::SouthEast => (
+            TOGGLE_BUTTON_EDGE_INSET_LOGICAL,
+            TOGGLE_BUTTON_EDGE_INSET_LOGICAL,
+        ),
     };
+    let horizontal_inset = horizontal_edge_inset * scale + button_half;
+    let vertical_inset = vertical_edge_inset * scale + button_half;
     let x = match corner {
         ToggleCorner::NorthWest | ToggleCorner::SouthWest => horizontal_inset,
         ToggleCorner::NorthEast | ToggleCorner::SouthEast => visual - horizontal_inset,
@@ -1761,7 +1772,7 @@ mod geometry_tests {
             PhysicalSize::new(1920, 1040),
             4,
         );
-        assert_eq!(position, PhysicalPosition::new(486, 419));
+        assert_eq!(position, PhysicalPosition::new(492, 413));
         let compact_center = compact_center_offset(compact.size, 4);
         let collapse_button =
             collapse_button_center_offset(PhysicalSize::new(314, 314), 4, ToggleCorner::NorthEast);
@@ -1774,6 +1785,22 @@ mod geometry_tests {
                 position.x + collapse_button.x,
                 position.y + collapse_button.y
             )
+        );
+    }
+
+    #[test]
+    fn top_corner_toggles_use_the_card_content_inset() {
+        assert_eq!(
+            collapse_button_center_offset(PhysicalSize::new(314, 314), 4, ToggleCorner::NorthWest),
+            PhysicalPosition::new(47, 47)
+        );
+        assert_eq!(
+            collapse_button_center_offset(PhysicalSize::new(314, 314), 4, ToggleCorner::NorthEast),
+            PhysicalPosition::new(268, 47)
+        );
+        assert_eq!(
+            collapse_button_center_offset(PhysicalSize::new(314, 314), 4, ToggleCorner::SouthEast),
+            PhysicalPosition::new(274, 274)
         );
     }
 

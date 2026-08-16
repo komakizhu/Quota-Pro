@@ -1,155 +1,141 @@
-# Quota Float
+# Quota Pro
 
-A lightweight Windows/macOS desktop widget that keeps your Codex quota visible from your local Codex Desktop session.
+Quota Pro 是一个 Windows/macOS 桌面悬浮工具，用来在桌面上持续显示 Codex 的额度、重置时间和状态。当前版本为 `1.0.0`，应用名称为 **Quota Pro**。
 
-![Quota Float quota states](docs/images/quota-states.png)
+## 项目来源
 
-## Highlights
+本项目基于原始项目 [change-42-yhmm/quota-float](https://github.com/change-42-yhmm/quota-float) 开发，当前维护 fork 为 [komakizhu/quota-float-switch](https://github.com/komakizhu/quota-float-switch)。原项目提供了额度读取、Tauri 桌面窗口和基础悬浮卡片；本 fork 重点修复交互、窗口几何和 macOS 视觉体验，并继续保留原项目的本地优先设计。
 
-- Shows your Codex plan, 5-hour quota, weekly quota, and next reset time in a compact always-on-top widget.
-- Uses clear quota states for healthy, caution, and critical remaining usage.
-- Uses a padded macOS app icon so the Dock artwork matches native icon proportions.
-- Offers small, medium, and large tray presets plus direct edge/corner resizing. Compact (48–144px) and expanded (220–460px) dimensions are saved independently and restored on restart.
-- Uses a manually toggled compact orb and expanded card; hover never changes the window size. Move to any edge or corner to reveal the native resize cursor, then drag to resize while keeping the opposite edge fixed. A single edge click cancels without saving; double-click an edge or corner to restore the current mode's default size (72px orb or 306px card).
-- Keeps the active expand/collapse button anchored under the orb's center, choosing the nearest card corner near screen edges so switching modes never requires moving the pointer, even at custom maximum sizes.
-- Lets you drag the compact orb or expanded header to any screen position and restores the compact anchor after toggling.
-- Indicates whether quota is currently being consumed.
-- Includes persistent expansion, always-on-top controls, and localized tray actions.
-- Falls back to a clearly marked weekly-quota view when the 5-hour window is unavailable.
-- Checks for app updates automatically and supports signed in-app updates on Windows.
-- Shows reset credit count and available reset-credit expiration times when the quota service provides them.
-- Handles stale data, signed-out sessions, unavailable quota responses, and loading states without fabricating values.
+## 主要改进
 
-## Screenshots
+### 交互与窗口行为
 
-| Quota states | Floating orb | Reset credit expiration |
-| --- | --- | --- |
-| ![Healthy, caution, and critical quota states](docs/images/quota-states.png) | ![Collapsed quota orb](docs/images/quota-orb.png) | ![Reset credit expiration popover](docs/images/quota-reset-expiration.png) |
+- 从“鼠标悬停自动展开”改为手动切换：紧凑悬浮球点击展开，卡片标题栏按钮收起。
+- 悬浮球和卡片可以拖到屏幕任意位置，不再强制吸附到屏幕边缘。
+- 展开和收起会保持紧凑态锚点，左下角、右下角及多显示器场景不会因为切换而漂移。
+- 支持连续尺寸调整：悬浮球 `48–144px`，卡片 `220–460px`，两种尺寸独立保存。
+- 四边和四角都可以拖动调整大小；双击边框或角落恢复当前模式的默认尺寸。
+- 缩放使用固定对侧边缘、全局鼠标坐标和最新帧调度，减少跳动、掉帧和松手后回弹。
+- 切换按钮会根据卡片所在象限自动选择合适的角落，尽量保证鼠标无需移动即可完成展开/收起。
 
-### Weekly quota fallback
+### 皮肤与设置
 
-| Expanded weekly view | Weekly quota orb |
-| --- | --- |
-| ![Expanded weekly quota fallback](docs/images/quota-v0.1.4-weekly-fallback.png) | ![Weekly quota orb with W badge](docs/images/quota-v0.1.4-weekly-orb.png) |
+- 默认皮肤为透明磨砂玻璃风格，保留现有窗口形状、圆角、布局和缩放逻辑。
+- 内置皮肤：**默认**（Glass）、**柔光**和**电脑**；内置皮肤无需付费。
+- Glass 支持三种材质模式：**透明**、**Dock 毛玻璃**和 **Liquid Glass**（系统支持时启用）。
+- 支持导入 PNG、JPEG 或 WebP 自定义皮肤，并可调整名称、文字色调和强调色。
+- 设置窗口使用 macOS 风格布局；主题位于皮肤之前，支持跟随系统、浅色和深色。
+- 支持中文/英文切换、点击穿透、开机启动、自动检查更新和版本信息。
+- “始终置顶”入口保留在悬浮卡片中；设置页不重复显示该选项。
 
-### Dark healthy state
+### 额度展示与稳定性
 
-![Quota Float dark healthy-state preview](docs/images/quota-v0.2.4-dark-healthy.jpg)
+- 显示计划名称、5 小时额度、周额度、重置时间和重置机会。
+- 5 小时额度暂不可用时，自动切换到带 `W` 标记的周额度视图。
+- 卡片和悬浮球的文字按原生 CSS 尺寸渲染，不使用整体位图缩放，避免自定义尺寸下字体模糊。
+- 支持 Retina、非 Retina、负坐标副屏，以及 Dock/任务栏附近的工作区边界。
+- 处理登录失效、额度接口变化、加载中、过期和不可用数据，不凭空生成额度数值。
 
-The preview uses mock quota data only; it does not contain account or device information.
+## 使用教程
 
-## Repository Metadata
+### 1. 安装并启动
 
-Suggested repository description:
+从 fork 的 [Releases](https://github.com/komakizhu/quota-float-switch/releases) 下载对应系统的安装包。首次启动前，请先在本机登录 Codex Desktop；Quota Pro 会读取现有登录状态来请求额度数据。
 
-```text
-A lightweight Windows/macOS desktop widget that keeps your Codex quota visible from your local Codex Desktop session.
-```
+macOS 如果提示应用来自未验证开发者，请在“系统设置 → 隐私与安全性”中允许打开，或对已签名的 `.app` 右键选择“打开”。Windows 用户按安装程序提示完成安装即可。
 
-Suggested topics:
+### 2. 展开、收起和移动
 
-```text
-codex, quota, tauri, react, rust, desktop-app, windows, macos, productivity
-```
+- 紧凑态：单击悬浮球展开卡片。
+- 展开态：点击标题栏中的收起按钮回到悬浮球。
+- 移动悬浮球：在中心区域按住并拖动；按下后移动超过拖动阈值才会开始移动，不会误触展开。
+- 移动卡片：拖动标题栏空白区域；按钮、刷新和额度内容不会启动窗口拖动。
+- 如果开启了鼠标穿透，请通过托盘菜单中的“切换窗口大小”或关闭鼠标穿透后操作。
 
-## How It Works
+### 3. 调整尺寸
 
-Quota Float reads the existing Codex Desktop login state on your machine and queries Codex/ChatGPT quota endpoints with that session. It does not estimate usage from local token counts and does not redeem reset credits or modify account settings.
+把鼠标移动到悬浮球或卡片的边缘/角落，出现调整大小光标后按住拖动。四角用于正方形对角缩放，四条边用于单轴方向调整；窗口会自动保持正方形并限制在可用尺寸范围内。
 
-Browser preview uses mock data. Real quota reading requires the Tauri desktop app and an existing Codex Desktop login on the same machine.
+双击边缘或角落即可恢复当前模式默认尺寸：悬浮球 `72px`，展开卡片 `306px`。恢复尺寸不会改变窗口位置，也不会修改另一种模式的自定义尺寸。
 
-## Download
+### 4. 设置窗口
 
-For normal users, download the latest installer from GitHub Releases:
+使用以下任一方式打开设置：
 
-- Latest release: https://github.com/change-42-yhmm/quota-float/releases/latest
-- Windows: use the `.exe` or `.msi` installer.
-- macOS Universal: use the `.dmg` bundle.
+- 在卡片界面点击设置按钮；
+- 点击托盘图标，在菜单中选择“Settings / 设置”；
+- macOS 使用 `⌘,`（Command + 逗号）。
 
-Updater artifacts are signed with the project's Tauri update key. Windows Authenticode signing and macOS notarization are separate platform-signing steps; builds without those certificates may still trigger SmartScreen or Gatekeeper warnings.
+设置页包含：
 
-## Feedback
+- **通用**：语言、开机启动、自动轮换间隔；
+- **悬浮窗**：鼠标穿透、紧凑尺寸、展开尺寸和尺寸预设；
+- **外观**：主题（跟随系统/浅色/深色）和皮肤选择；
+- **版本与更新**：当前版本、自动检查更新、立即检查更新和项目地址。
 
-Please use GitHub Issues for bugs, compatibility reports, and feature requests:
+### 5. 选择或导入皮肤
 
-https://github.com/change-42-yhmm/quota-float/issues
+进入“设置 → 外观”后：
 
-## Built-in skins
+1. 在“皮肤”区域选择默认、柔光或电脑皮肤。
+2. 选择默认皮肤时，在“玻璃材质”中选择透明、Dock 毛玻璃或 Liquid Glass。
+3. 在自定义皮肤区域导入 PNG、JPEG 或 WebP 图片。
+4. 选择自定义皮肤后，可以修改名称、文字色调和强调色；删除皮肤不会影响其他内置皮肤。
 
-The standard installer includes Default (frosted glass), Soft Light, and Computer as permanently free built-in skins. Default is the frosted-glass skin and offers light, medium, and heavy blur levels in Settings.
+### 6. 托盘菜单
 
-### Dark healthy-state previews
+托盘菜单提供常用操作：打开/隐藏窗口、打开设置、立即刷新、切换窗口大小、选择皮肤、切换主题、鼠标穿透和退出。鼠标穿透开启后，托盘菜单是切换窗口大小和皮肤的备用入口。
 
-These previews use mock quota data and do not reveal any account or device information.
+## 数据与隐私
 
-| Soft Light | Computer |
-| --- | --- |
-| <img src="docs/images/quota-v0.2.4-dark-healthy.jpg" alt="Soft Light skin in a dark healthy-state preview" width="260"> | <img src="docs/images/skin-computer-dark-healthy.jpg" alt="Computer skin in a dark healthy-state preview" width="260"> |
+Quota Pro 是本地优先应用：
 
-## Privacy Boundary
+- 只读取本机 Codex Desktop 的现有登录状态，用于请求额度接口；
+- 不保存 Codex token、账号 ID、提示词、聊天记录或原始额度响应；
+- 只在应用配置目录保存窗口位置、尺寸、主题、皮肤和其他用户偏好；
+- 不包含遥测、广告、分析或第三方跟踪；
+- 不会兑换重置机会，也不会修改账号设置。
 
-Quota Float is local-first and intentionally narrow:
+详细说明见 [PRIVACY.md](PRIVACY.md) 和 [SECURITY.md](SECURITY.md)。
 
-- Reads the local Codex Desktop login state only to query Codex quota.
-- Sends the existing Codex access token only to ChatGPT quota endpoints.
-- Stores only widget preferences in its own app config directory.
-- Does not store Codex tokens, account IDs, prompts, chat history, raw quota responses, or local auth paths.
-- Does not include telemetry, analytics, crash reporting, or third-party tracking.
-- Does not redeem reset credits or modify account settings.
+## 开发与构建
 
-See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) for the full boundary.
-
-## Accuracy Boundary
-
-Codex quota is read from Codex/ChatGPT quota service responses. If the response format changes, the app shows an unavailable or stale state instead of inventing quota values.
-
-## Development
-
-Requirements:
+环境要求：
 
 - Node.js 20+
 - Rust stable
-- Tauri 2 system dependencies for your platform
+- Tauri 2 对应平台依赖
 
 ```bash
 npm install
 npm run dev
-npm run test
+npm test
 npm run build
 npm run tauri dev
 ```
 
-After Codex Desktop updates, run the compatibility check:
-
-```bash
-npm run check:codex
-```
-
-See [docs/CODEX-UPDATE-CHECK.md](docs/CODEX-UPDATE-CHECK.md) for the automated update-check workflow and optional Task Scheduler setup.
-
-## Build
+构建桌面应用：
 
 ```bash
 npm run tauri build
 ```
 
-On Windows, Tauri may download WiX to create an MSI installer. If WiX download fails, the release executable may still be produced at:
+发布工作流会在推送 `v*` 标签后构建 Windows 和 macOS 安装包。发布前请确认 `package.json` 版本号与标签一致，并阅读 [docs/GITHUB-RELEASE-CHECKLIST.md](docs/GITHUB-RELEASE-CHECKLIST.md)。
 
-```text
-src-tauri/target/release/quota-float.exe
-```
+## 截图
 
-## Release
+![Quota Pro quota states](docs/images/quota-states.png)
 
-GitHub Actions are configured for:
+| 额度卡片 | 悬浮球 | 周额度回退视图 |
+| --- | --- | --- |
+| ![Quota card](docs/images/quota-orb.png) | ![Quota orb](docs/images/quota-v0.1.4-weekly-orb.png) | ![Weekly quota fallback](docs/images/quota-v0.1.4-weekly-fallback.png) |
 
-- CI on push/PR: frontend tests, Rust tests, web build, Tauri build.
-- `v*` tags: Windows and macOS Universal installers, updater signatures, `latest.json`, and a public GitHub Release.
+截图使用模拟额度数据，不包含账号或设备信息。
 
-See [docs/GITHUB-RELEASE-CHECKLIST.md](docs/GITHUB-RELEASE-CHECKLIST.md) before publishing a version for others.
+## 反馈与贡献
 
-Do not upload local credentials, `.codex`, `.env*`, screenshots with personal data, `node_modules`, `dist`, `src-tauri/target`, or local installers to source control.
+请在 [GitHub Issues](https://github.com/komakizhu/quota-float-switch/issues) 提交 Bug、兼容性报告和功能建议。提交代码前请先说明问题场景和复现步骤。
 
-## License
+## 许可证
 
 MIT

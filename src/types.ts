@@ -3,19 +3,31 @@ export type SnapshotStatus = "ok" | "stale" | "loading" | "unavailable" | "signe
 export type Language = "zh-CN" | "en";
 export type WidgetTheme = "light" | "dark";
 export type AppearancePreference = "system" | WidgetTheme;
-export type WidgetSkin = "default" | "blur" | "computer";
+export type BuiltinSkin = "default" | "computer" | "glass";
+export type WidgetSkin = BuiltinSkin;
+export type GlassStyle = "transparent" | "dock" | "liquid";
+export type SkinTextTone = "auto" | "light" | "dark";
 export type WidgetMode = "compact" | "expanded";
 export type ToggleCorner = "nw" | "ne" | "sw" | "se";
 export type WidgetSize = "small" | "medium" | "large" | "custom";
 
-export interface SupporterStatus {
-  requestCode: string;
-  active: boolean;
-  message: string;
-  unlockedSkin: Exclude<WidgetSkin, "default"> | null;
-  unlockedSkins: Array<Exclude<WidgetSkin, "default">>;
-  selectedSkin: WidgetSkin;
-  availableSkins: WidgetSkin[];
+export interface CustomSkinMetadata {
+  id: string;
+  name: string;
+  fileName: string;
+  detectedTone: "light" | "dark";
+  textTone: SkinTextTone;
+  accentColor: string;
+}
+
+export interface CustomSkinAsset {
+  id: string;
+  dataUrl: string;
+}
+
+export interface PlatformCapabilities {
+  nativeGlass: boolean;
+  supportsLiquidGlass: boolean;
 }
 
 export interface UsageWindow {
@@ -47,13 +59,10 @@ export interface WidgetPreferences {
   toggleCorner: ToggleCorner;
   pinnedProvider: ProviderId | null;
   autoRotateSeconds: number;
+  autoCheckUpdates: boolean;
   language: Language;
   appearance: AppearancePreference;
-  license: string | null;
-  licenses: string[];
-  unlockedSkin: Exclude<WidgetSkin, "default"> | null;
-  unlockedSkins: Array<Exclude<WidgetSkin, "default">>;
-  selectedSkin: WidgetSkin;
-  supporterPromptFirstSeenAt?: string | null;
-  supporterPromptShownAt?: string | null;
+  selectedSkin: string;
+  glassStyle: GlassStyle;
+  customSkins: CustomSkinMetadata[];
 }

@@ -1,7 +1,9 @@
-import type { ProviderSnapshot, SupporterStatus, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin } from "../types";
+import type { CustomSkinAsset, CustomSkinMetadata, PlatformCapabilities, ProviderSnapshot, SkinTextTone, WidgetMode, WidgetPreferences, WidgetSize } from "../types";
 import type { ResizeEdge } from "./resize";
 
-const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+export type { CustomSkinAsset, CustomSkinMetadata, SkinTextTone } from "../types";
+
+const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: null, autoRotateSeconds: 12, autoCheckUpdates: true, language: "zh-CN", appearance: "light", selectedSkin: "glass", glassStyle: "dock", customSkins: [] };
 
 function widgetSizeMarker(compactSize: number, expandedSize: number): WidgetSize {
   const presets: Array<[WidgetSize, number, number]> = [
@@ -27,6 +29,7 @@ const mockSnapshot: ProviderSnapshot = {
 
 let widgetTransition: Promise<unknown> = Promise.resolve();
 let resizePreviewLatest: number | null = null;
+let resizePreviewLastDispatched: number | null = null;
 let resizePreviewRunning = false;
 let resizePreviewDrain: Promise<void> = Promise.resolve();
 
@@ -59,10 +62,42 @@ export async function getPreferences(): Promise<WidgetPreferences> {
   return invoke<WidgetPreferences>("get_preferences");
 }
 
-export async function updatePreferences(value: WidgetPreferences): Promise<void> {
+export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
+  if (!isTauri()) return { nativeGlass: false, supportsLiquidGlass: false };
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<PlatformCapabilities>("get_platform_capabilities");
+}
+
+export async function getAppVersion(): Promise<string> {
+  if (!isTauri()) return "1.0.0";
+  const { getVersion } = await import("@tauri-apps/api/app");
+  return getVersion();
+}
+
+export async function updatePreferences(value: WidgetPreferences): Promise<WidgetPreferences | undefined> {
+  if (!isTauri()) return undefined;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<WidgetPreferences>("set_preferences", { preferences: value });
+}
+
+/** Native menu/window ownership lands in Task 7; these commands intentionally
+ * keep deterministic browser fallbacks so the settings UI is previewable now. */
+export async function showSettings(): Promise<void> {
   if (!isTauri()) return;
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("set_preferences", { preferences: value });
+  await invoke("show_settings");
+}
+
+export async function getLaunchAtLogin(): Promise<boolean> {
+  if (!isTauri()) return false;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("get_launch_at_login");
+}
+
+export async function setLaunchAtLogin(enabled: boolean): Promise<boolean> {
+  if (!isTauri()) return enabled;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("set_launch_at_login", { enabled });
 }
 
 export async function setClickThrough(locked: boolean): Promise<WidgetPreferences> {
@@ -83,22 +118,42 @@ export async function syncWidgetAppearance(appearance: "light" | "dark"): Promis
   await invoke("sync_widget_appearance", { appearance });
 }
 
-export async function getSupporterStatus(): Promise<SupporterStatus> {
-  if (!isTauri()) return { requestCode: "Browser preview does not have a device code", active: false, message: "Supporter activation is available in the desktop app.", unlockedSkin: null, unlockedSkins: [], selectedSkin: "default", availableSkins: ["default"] };
+export async function selectSkin(id: string): Promise<WidgetPreferences> {
+  if (!isTauri()) {
+    const selectedSkin = id === "computer" || id === "glass" ? id : "glass";
+    return { ...defaultPreferences, selectedSkin };
+  }
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<SupporterStatus>("get_supporter_status");
+  return invoke<WidgetPreferences>("select_skin", { id });
 }
 
-export async function activateSupporterLicense(license: string): Promise<SupporterStatus> {
-  if (!isTauri()) throw new Error("Supporter activation is available in the desktop app.");
+export async function importCustomSkin(name: string, bytes: Uint8Array): Promise<CustomSkinMetadata | null> {
+  if (!isTauri()) return null;
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<SupporterStatus>("activate_supporter_license", { license });
+  return invoke<CustomSkinMetadata>("import_custom_skin", { name, bytes: Array.from(bytes) });
 }
 
-export async function selectSupporterSkin(skinId: WidgetSkin): Promise<SupporterStatus> {
-  if (!isTauri()) throw new Error("Supporter skin selection is available in the desktop app.");
+export async function getCustomSkinAsset(id: string): Promise<CustomSkinAsset | null> {
+  if (!isTauri()) return null;
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<SupporterStatus>("select_supporter_skin", { skinId });
+  return invoke<CustomSkinAsset>("get_custom_skin_asset", { id });
+}
+
+export async function updateCustomSkin(
+  id: string,
+  name: string,
+  textTone: SkinTextTone,
+  accentColor: string,
+): Promise<WidgetPreferences> {
+  if (!isTauri()) return defaultPreferences;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<WidgetPreferences>("update_custom_skin", { id, name, textTone, accentColor });
+}
+
+export async function deleteCustomSkin(id: string): Promise<WidgetPreferences> {
+  if (!isTauri()) return defaultPreferences;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<WidgetPreferences>("delete_custom_skin", { id });
 }
 
 export async function startDragging(): Promise<void> {
@@ -166,12 +221,20 @@ export async function startDragging(): Promise<void> {
   }
 }
 
-export function setWidgetMode(mode: WidgetMode): Promise<WidgetPreferences | undefined> {
+export function setWidgetMode(mode: WidgetMode, southwestWeeklyPrimary = false): Promise<WidgetPreferences | undefined> {
   if (!isTauri()) return Promise.resolve({ ...defaultPreferences, widgetMode: mode });
   return enqueueWidgetTransition(async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     const workArea = await currentWorkArea();
-    return invoke<WidgetPreferences>("set_widget_mode", { mode, workArea });
+    return invoke<WidgetPreferences>("set_widget_mode", { mode, workArea, southwestWeeklyPrimary });
+  });
+}
+
+export function syncWidgetLayout(southwestWeeklyPrimary: boolean): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return enqueueWidgetTransition(async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("sync_widget_layout", { southwestWeeklyPrimary });
   });
 }
 
@@ -182,14 +245,31 @@ export function setWidgetSize(size: WidgetSize): Promise<WidgetPreferences | und
   }
   return enqueueWidgetTransition(async () => {
     const { invoke } = await import("@tauri-apps/api/core");
-    const workArea = await currentWorkArea();
-    return invoke<WidgetPreferences>("set_widget_size", { size, workArea });
+    // The native layer resolves the widget's own monitor. Passing the
+    // settings window work area here can incorrectly clamp a widget on a
+    // different display.
+    return invoke<WidgetPreferences>("set_widget_size", { size });
+  });
+}
+
+export function setWidgetDimensions(compactSize: number, expandedSize: number): Promise<WidgetPreferences | undefined> {
+  const compact = Math.min(144, Math.max(48, compactSize));
+  const expanded = Math.min(460, Math.max(220, expandedSize));
+  if (!isTauri()) return Promise.resolve({ ...defaultPreferences, widgetSize: widgetSizeMarker(compact, expanded), compactSize: compact, expandedSize: expanded });
+  return enqueueWidgetTransition(async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    // The native command resolves the widget's own monitor. The settings
+    // window may be on another display, so never use its monitor as geometry
+    // input for the floating widget.
+    return invoke<WidgetPreferences>("set_widget_dimensions", { compactSize: compact, expandedSize: expanded });
   });
 }
 
 export function beginWidgetResize(mode: WidgetMode, edge: ResizeEdge): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return enqueueWidgetTransition(async () => {
+    resizePreviewLatest = null;
+    resizePreviewLastDispatched = null;
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("begin_widget_resize", { mode, edge, workArea: await currentWorkArea() });
   });
@@ -205,7 +285,9 @@ async function drainWidgetResizePreviews(): Promise<void> {
       while (resizePreviewLatest !== null) {
         const size = resizePreviewLatest;
         resizePreviewLatest = null;
+        if (size === resizePreviewLastDispatched) continue;
         await invoke("preview_widget_resize", { size });
+        resizePreviewLastDispatched = size;
       }
     } finally {
       resizePreviewRunning = false;
@@ -216,16 +298,18 @@ async function drainWidgetResizePreviews(): Promise<void> {
 
 export function previewWidgetResize(size: number): void {
   if (!isTauri()) return;
-  resizePreviewLatest = size;
+  resizePreviewLatest = Math.round(size);
   void drainWidgetResizePreviews().catch(() => undefined);
 }
 
 export async function finishWidgetResize(mode: WidgetMode, size: number): Promise<WidgetPreferences | undefined> {
-  if (!isTauri()) return { ...defaultPreferences, [mode === "compact" ? "compactSize" : "expandedSize"]: size, widgetSize: "custom", widgetMode: mode };
+  const roundedSize = Math.round(size);
+  if (!isTauri()) return { ...defaultPreferences, [mode === "compact" ? "compactSize" : "expandedSize"]: roundedSize, widgetSize: "custom", widgetMode: mode };
   return enqueueWidgetTransition(async () => {
+    previewWidgetResize(roundedSize);
     await drainWidgetResizePreviews();
     const { invoke } = await import("@tauri-apps/api/core");
-    return invoke<WidgetPreferences>("finish_widget_resize", { size });
+    return invoke<WidgetPreferences>("finish_widget_resize", { size: roundedSize });
   });
 }
 
@@ -251,7 +335,8 @@ export function cancelWidgetResize(): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return enqueueWidgetTransition(async () => {
     resizePreviewLatest = null;
-    await drainWidgetResizePreviews();
+    await drainWidgetResizePreviews().catch(() => undefined);
+    resizePreviewLastDispatched = null;
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("cancel_widget_resize");
   });
@@ -261,11 +346,15 @@ export async function listenDesktopEvents(handlers: {
   onPreferences: (value: WidgetPreferences) => void;
   onRefresh: () => void;
   onUpdate: () => void;
+  onLaunchAtLogin?: (enabled: boolean) => void;
 }): Promise<() => void> {
   if (!isTauri()) return () => undefined;
   const { listen } = await import("@tauri-apps/api/event");
   const unlistenPreferences = await listen<WidgetPreferences>("preferences-changed", (event) => handlers.onPreferences(event.payload));
   const unlistenRefresh = await listen("refresh-requested", handlers.onRefresh);
   const unlistenUpdate = await listen("update-check-requested", handlers.onUpdate);
-  return () => { unlistenPreferences(); unlistenRefresh(); unlistenUpdate(); };
+  const unlistenLaunchAtLogin = handlers.onLaunchAtLogin
+    ? await listen<boolean>("launch-at-login-changed", (event) => handlers.onLaunchAtLogin?.(event.payload))
+    : () => undefined;
+  return () => { unlistenPreferences(); unlistenRefresh(); unlistenUpdate(); unlistenLaunchAtLogin(); };
 }

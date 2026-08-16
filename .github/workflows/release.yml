@@ -34,23 +34,6 @@ jobs:
           if ($env:GITHUB_REF_NAME -ne $expectedTag) {
             throw "Release tag '$env:GITHUB_REF_NAME' does not match package version '$expectedTag'."
           }
-      - name: Validate license verification key
-        shell: pwsh
-        env:
-          QUOTA_FLOAT_LICENSE_PUBLIC_KEY: ${{ secrets.QUOTA_FLOAT_LICENSE_PUBLIC_KEY }}
-        run: |
-          $encoded = $env:QUOTA_FLOAT_LICENSE_PUBLIC_KEY
-          if ([string]::IsNullOrWhiteSpace($encoded)) {
-            throw "QUOTA_FLOAT_LICENSE_PUBLIC_KEY is not configured."
-          }
-          try {
-            $key = [Convert]::FromBase64String($encoded.Trim())
-          } catch {
-            throw "QUOTA_FLOAT_LICENSE_PUBLIC_KEY is not valid Base64."
-          }
-          if ($key.Length -ne 32) {
-            throw "QUOTA_FLOAT_LICENSE_PUBLIC_KEY must decode to exactly 32 bytes."
-          }
       - name: Install macOS universal targets
         if: runner.os == 'macOS'
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -65,7 +48,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          QUOTA_FLOAT_LICENSE_PUBLIC_KEY: ${{ secrets.QUOTA_FLOAT_LICENSE_PUBLIC_KEY }}
         with:
           tagName: v__VERSION__
           releaseName: Quota Float v__VERSION__
@@ -73,7 +55,7 @@ jobs:
             ## What's new
 
             - Refreshes Blur state artwork and corrects its control-button fill states.
-            - Adds an offline maintainer issuance ledger with order details and clearly labeled local cancellation records.
+            - Makes the Default, Blur, and Computer skins permanently free.
             - Removes outer card shadows while retaining the transparent-window safety inset.
             - Adds a Chinese/English content switch to the design workbench, including widget preview copy.
             - Keeps showing weekly quota when the 5-hour window is temporarily unavailable, with a clear `W` badge.

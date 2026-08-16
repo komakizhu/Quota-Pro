@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orbCornerRadiusForSize, snapLogicalSizeToDevicePixels, widgetScaleForSize } from "./render";
+import { orbCornerRadiusForSize, resizeContentScaleForSize, snapLogicalSizeToDevicePixels, widgetScaleForSize } from "./render";
 
 describe("render sizing", () => {
   it("snaps logical sizes to the physical pixel grid", () => {
@@ -10,6 +10,12 @@ describe("render sizing", () => {
   it("keeps the scale based on the snapped visual size", () => {
     expect(widgetScaleForSize(451.26, 306, 2)).toBeCloseTo(451.5 / 306);
     expect(widgetScaleForSize(306, 306, 2)).toBe(1);
+  });
+
+  it("steps resize content on the physical pixel grid", () => {
+    expect(resizeContentScaleForSize(307, 306, 1)).toBeCloseTo(307 / 306);
+    expect(resizeContentScaleForSize(308, 306, 1)).toBeCloseTo(308 / 306);
+    expect(resizeContentScaleForSize(307, 306, 2)).toBeCloseTo(307 / 306);
   });
 
   it("keeps the default orb radius at 25 percent of its size", () => {

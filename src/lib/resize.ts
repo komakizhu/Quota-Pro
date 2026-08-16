@@ -1,5 +1,10 @@
 export type ResizeEdge = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
+export interface ResizePointerSample {
+  screenX: number;
+  screenY: number;
+}
+
 export const COMPACT_SIZE_RANGE = { min: 48, max: 144 } as const;
 export const EXPANDED_SIZE_RANGE = { min: 220, max: 460 } as const;
 /** The regular edge hit area, in CSS pixels. */
@@ -9,6 +14,13 @@ export const RESIZE_EDGE_HIT_SIZE = 10;
  * require pixel-perfect positioning near a rounded corner.
  */
 export const RESIZE_CORNER_HIT_SIZE = 18;
+
+export function getOrbResizeHitSizes(size: number): { corner: number; edge: number } {
+  return {
+    corner: Math.min(22, Math.max(14, Math.round(size * 0.25))),
+    edge: Math.min(5, Math.max(2, Math.round(size * 0.04))),
+  };
+}
 
 export function getResizeEdge(
   clientX: number,
@@ -47,7 +59,11 @@ export function resizeDelta(edge: ResizeEdge, deltaX: number, deltaY: number): n
   if (edge === "n") return -deltaY;
   const horizontalSign = edge.endsWith("e") ? 1 : -1;
   const verticalSign = edge.startsWith("s") ? 1 : -1;
-  return (deltaX * horizontalSign + deltaY * verticalSign) / Math.sqrt(2);
+  // A square's corner moves along its 45° diagonal.  Use the signed
+  // average of the two axis deltas so a 20px diagonal pointer movement
+  // produces a 20px edge movement, rather than expanding it to 28.3px by
+  // treating the diagonal distance as an edge length.
+  return (deltaX * horizontalSign + deltaY * verticalSign) / 2;
 }
 
 export function clampResizeSize(size: number, range: { min: number; max: number }): number {
@@ -56,6 +72,10 @@ export function clampResizeSize(size: number, range: { min: number; max: number 
 
 export function resizeSizeFromPointer(startSize: number, edge: ResizeEdge, deltaX: number, deltaY: number, range: { min: number; max: number }): number {
   return clampResizeSize(startSize + resizeDelta(edge, deltaX, deltaY), range);
+}
+
+export function resizePointerDelta(start: ResizePointerSample, current: ResizePointerSample): { x: number; y: number } {
+  return { x: current.screenX - start.screenX, y: current.screenY - start.screenY };
 }
 
 export function resizeHasMoved(startX: number, startY: number, currentX: number, currentY: number, threshold = 6): boolean {

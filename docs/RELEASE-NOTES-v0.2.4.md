@@ -13,7 +13,7 @@
 
 ![Quota Float dark healthy-state preview](https://github.com/change-42-yhmm/quota-float/releases/download/v0.2.4/quota-v0.2.4-dark-healthy.jpg)
 
-This product preview uses mock quota data only. It does not contain account, device, or license information.
+This product preview uses mock quota data only. It does not contain account or device information.
 
 ## Privacy
 

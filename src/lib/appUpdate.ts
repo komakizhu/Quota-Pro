@@ -1,7 +1,8 @@
 import { isTauri } from "./bridge";
 import type { Language } from "../types";
 
-export const RELEASE_URL = "https://github.com/change-42-yhmm/quota-float/releases/latest";
+export const RELEASE_URL = "https://github.com/komakizhu/quota-float-switch/releases/latest";
+export const PROJECT_URL = "https://github.com/komakizhu/quota-float-switch";
 
 export interface UpdateMessages {
   checking: string;
@@ -20,6 +21,15 @@ export async function openReleasePage(): Promise<void> {
   }
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl(RELEASE_URL);
+}
+
+export async function openProjectPage(): Promise<void> {
+  if (!isTauri()) {
+    window.open(PROJECT_URL, "_blank", "noopener,noreferrer");
+    return;
+  }
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(PROJECT_URL);
 }
 
 export async function checkForAppUpdate(

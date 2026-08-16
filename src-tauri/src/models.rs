@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+const DEFAULT_CUSTOM_SKIN_ACCENT: &str = "#5A90D6";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +43,18 @@ impl ProviderSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomSkinMetadata {
+    pub id: String,
+    pub name: String,
+    pub file_name: String,
+    pub detected_tone: String,
+    pub text_tone: String,
+    pub accent_color: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetPreferences {
     pub locked: bool,
@@ -60,24 +74,20 @@ pub struct WidgetPreferences {
     pub stay_expanded: bool,
     pub pinned_provider: Option<String>,
     pub auto_rotate_seconds: u64,
+    #[serde(default = "default_auto_check_updates")]
+    pub auto_check_updates: bool,
     #[serde(default = "default_language")]
     pub language: String,
     #[serde(default = "default_appearance")]
     pub appearance: String,
-    #[serde(default)]
-    pub license: Option<String>,
-    #[serde(default)]
-    pub licenses: Vec<String>,
-    #[serde(default)]
-    pub unlocked_skin: Option<String>,
-    #[serde(default)]
-    pub unlocked_skins: Vec<String>,
     #[serde(default = "default_skin")]
     pub selected_skin: String,
+    #[serde(default = "missing_glass_style")]
+    pub glass_style: String,
+    #[serde(default, skip_serializing)]
+    pub glass_blur: Option<String>,
     #[serde(default)]
-    pub supporter_prompt_first_seen_at: Option<String>,
-    #[serde(default)]
-    pub supporter_prompt_shown_at: Option<String>,
+    pub custom_skins: Vec<CustomSkinMetadata>,
 }
 
 fn default_always_on_top() -> bool {
@@ -86,11 +96,20 @@ fn default_always_on_top() -> bool {
 fn default_language() -> String {
     "zh-CN".into()
 }
+fn default_auto_check_updates() -> bool {
+    true
+}
 fn default_appearance() -> String {
     "light".into()
 }
 fn default_skin() -> String {
-    "default".into()
+    "glass".into()
+}
+fn default_glass_style() -> String {
+    "dock".into()
+}
+fn missing_glass_style() -> String {
+    String::new()
 }
 fn default_widget_size() -> String {
     "medium".into()
@@ -106,6 +125,30 @@ fn default_expanded_size() -> f64 {
 }
 fn default_toggle_corner() -> String {
     "ne".into()
+}
+
+fn normalize_accent_color(value: &str) -> String {
+    let value = value.trim();
+    if value.len() == 7
+        && value.starts_with('#')
+        && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        value.to_ascii_uppercase()
+    } else {
+        DEFAULT_CUSTOM_SKIN_ACCENT.into()
+    }
+}
+
+pub(crate) fn valid_custom_skin_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 96
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+pub(crate) fn custom_skin_file_name(id: &str) -> String {
+    format!("{id}.png")
 }
 
 fn preset_factor(widget_size: &str) -> f64 {
@@ -129,15 +172,13 @@ impl Default for WidgetPreferences {
             stay_expanded: false,
             pinned_provider: None,
             auto_rotate_seconds: 12,
+            auto_check_updates: default_auto_check_updates(),
             language: default_language(),
             appearance: default_appearance(),
-            license: None,
-            licenses: Vec::new(),
-            unlocked_skin: None,
-            unlocked_skins: Vec::new(),
             selected_skin: default_skin(),
-            supporter_prompt_first_seen_at: None,
-            supporter_prompt_shown_at: None,
+            glass_style: default_glass_style(),
+            glass_blur: None,
+            custom_skins: Vec::new(),
         }
     }
 }
@@ -181,37 +222,51 @@ impl WidgetPreferences {
         if self.appearance != "system" && self.appearance != "light" && self.appearance != "dark" {
             self.appearance = default_appearance();
         }
-        if self.licenses.is_empty() {
-            if let Some(legacy) = self.license.take() {
-                self.licenses.push(legacy);
-            }
+        if self.glass_style.is_empty() {
+            self.glass_style = match self.glass_blur.as_deref() {
+                Some("light") => "transparent".into(),
+                Some("medium" | "heavy") => "dock".into(),
+                _ => default_glass_style(),
+            };
+        } else if !matches!(self.glass_style.as_str(), "transparent" | "dock" | "liquid") {
+            self.glass_style = default_glass_style();
         }
-        self.licenses.retain(|license| !license.trim().is_empty());
-        self.licenses.sort();
-        self.licenses.dedup();
-        if self.unlocked_skins.is_empty() {
-            if let Some(legacy) = self.unlocked_skin.take() {
-                self.unlocked_skins.push(legacy);
+        self.glass_blur = None;
+        let mut known_custom_ids = HashSet::new();
+        self.custom_skins.retain_mut(|metadata| {
+            metadata.id = metadata.id.trim().into();
+            if !valid_custom_skin_id(&metadata.id)
+                || metadata.file_name != custom_skin_file_name(&metadata.id)
+                || !known_custom_ids.insert(metadata.id.clone())
+            {
+                return false;
             }
+            if !matches!(metadata.detected_tone.as_str(), "light" | "dark") {
+                metadata.detected_tone = "dark".into();
+            }
+            if !matches!(metadata.text_tone.as_str(), "auto" | "light" | "dark") {
+                metadata.text_tone = "auto".into();
+            }
+            metadata.accent_color = normalize_accent_color(&metadata.accent_color);
+            true
+        });
+        if self.selected_skin == "blur" {
+            self.selected_skin = "default".into();
         }
-        self.unlocked_skins
-            .retain(|skin| matches!(skin.as_str(), "blur" | "computer"));
-        self.unlocked_skins.sort();
-        self.unlocked_skins.dedup();
-        if !matches!(self.selected_skin.as_str(), "default" | "blur" | "computer") {
+        let selected_custom_id = self.selected_skin.strip_prefix("custom:");
+        let selected_skin_is_valid = matches!(
+            self.selected_skin.as_str(),
+            "default" | "computer" | "glass"
+        ) || selected_custom_id.is_some_and(|selected_id| {
+            !selected_id.is_empty()
+                && self
+                    .custom_skins
+                    .iter()
+                    .any(|metadata| metadata.id == selected_id)
+        });
+        if !selected_skin_is_valid {
             self.selected_skin = default_skin();
         }
-        if self.selected_skin != "default"
-            && !self
-                .unlocked_skins
-                .iter()
-                .any(|skin| skin == &self.selected_skin)
-        {
-            self.selected_skin = default_skin();
-        }
-        // Keep the legacy fields populated for pre-migration renderer payloads.
-        self.license = self.licenses.first().cloned();
-        self.unlocked_skin = self.unlocked_skins.first().cloned();
         self
     }
 }
@@ -220,6 +275,252 @@ impl WidgetPreferences {
 mod tests {
     use super::WidgetPreferences;
     use serde_json::json;
+
+    fn legacy_preferences(selected_skin: &str) -> serde_json::Value {
+        json!({
+            "locked": false,
+            "pinnedProvider": null,
+            "autoRotateSeconds": 12,
+            "selectedSkin": selected_skin
+        })
+    }
+
+    #[test]
+    fn legacy_builtin_skin_selections_remain_selected_without_unlocks() {
+        for selected_skin in ["computer", "glass"] {
+            let parsed: WidgetPreferences =
+                serde_json::from_value(legacy_preferences(selected_skin))
+                    .expect("legacy preferences should deserialize");
+            assert_eq!(parsed.normalized().selected_skin, selected_skin);
+        }
+    }
+
+    #[test]
+    fn obsolete_supporter_fields_are_ignored_and_not_serialized() {
+        let mut raw = legacy_preferences("blur");
+        let object = raw
+            .as_object_mut()
+            .expect("test fixture should be an object");
+        object.insert("license".into(), json!("legacy-license"));
+        object.insert("licenses".into(), json!(["legacy-license"]));
+        object.insert("unlockedSkin".into(), json!("blur"));
+        object.insert("unlockedSkins".into(), json!(["blur", "computer"]));
+        object.insert(
+            "supporterPromptFirstSeenAt".into(),
+            json!("2026-01-01T00:00:00Z"),
+        );
+        object.insert(
+            "supporterPromptShownAt".into(),
+            json!("2026-01-04T00:00:00Z"),
+        );
+
+        let parsed: WidgetPreferences =
+            serde_json::from_value(raw).expect("obsolete fields should deserialize harmlessly");
+        let saved =
+            serde_json::to_value(parsed.normalized()).expect("preferences should serialize");
+
+        for key in [
+            "license",
+            "licenses",
+            "unlockedSkin",
+            "unlockedSkins",
+            "supporterPromptFirstSeenAt",
+            "supporterPromptShownAt",
+        ] {
+            assert!(
+                saved.get(key).is_none(),
+                "obsolete field {key} was serialized"
+            );
+        }
+        assert_eq!(saved["selectedSkin"], "default");
+    }
+
+    #[test]
+    fn custom_skin_selection_requires_matching_metadata() {
+        let mut valid = legacy_preferences("custom:lake");
+        valid
+            .as_object_mut()
+            .expect("test fixture should be an object")
+            .insert(
+                "customSkins".into(),
+                json!([{
+                    "id": "lake",
+                    "name": "Lake",
+                    "fileName": "lake.png",
+                    "detectedTone": "dark",
+                    "textTone": "auto",
+                    "accentColor": "#3677c8"
+                }]),
+            );
+        let parsed: WidgetPreferences =
+            serde_json::from_value(valid).expect("custom metadata should deserialize");
+        assert_eq!(parsed.normalized().selected_skin, "custom:lake");
+
+        for selected_skin in ["custom:missing", "custom:", "unknown"] {
+            let parsed: WidgetPreferences =
+                serde_json::from_value(legacy_preferences(selected_skin))
+                    .expect("invalid selection should deserialize");
+            assert_eq!(parsed.normalized().selected_skin, "glass");
+        }
+
+        let parsed: WidgetPreferences = serde_json::from_value(json!({
+            "locked": false,
+            "pinnedProvider": null,
+            "autoRotateSeconds": 12
+        }))
+        .expect("missing skin selection should deserialize");
+        assert_eq!(parsed.normalized().selected_skin, "glass");
+    }
+
+    #[test]
+    fn obsolete_blur_skin_selection_migrates_to_default_skin() {
+        let parsed: WidgetPreferences = serde_json::from_value(legacy_preferences("blur"))
+            .expect("legacy preferences should deserialize");
+        assert_eq!(parsed.normalized().selected_skin, "default");
+    }
+
+    #[test]
+    fn legacy_glass_blur_migrates_to_the_new_material_styles() {
+        for (legacy, expected) in [
+            ("light", "transparent"),
+            ("medium", "dock"),
+            ("heavy", "dock"),
+            ("unknown", "dock"),
+        ] {
+            let mut raw = legacy_preferences("glass");
+            raw.as_object_mut()
+                .expect("test fixture should be an object")
+                .insert("glassBlur".into(), json!(legacy));
+            let parsed: WidgetPreferences = serde_json::from_value(raw).unwrap();
+            assert_eq!(parsed.normalized().glass_style, expected);
+        }
+    }
+
+    #[test]
+    fn glass_style_defaults_to_dock_and_rejects_unknown_values() {
+        let parsed: WidgetPreferences =
+            serde_json::from_value(legacy_preferences("glass")).unwrap();
+        let saved = serde_json::to_value(parsed.normalized()).unwrap();
+        assert_eq!(saved["glassStyle"], "dock");
+        assert!(saved.get("glassBlur").is_none());
+
+        for (requested, expected) in [
+            ("transparent", "transparent"),
+            ("dock", "dock"),
+            ("liquid", "liquid"),
+            ("unknown", "dock"),
+        ] {
+            let mut raw = legacy_preferences("glass");
+            raw.as_object_mut()
+                .expect("test fixture should be an object")
+                .insert("glassStyle".into(), json!(requested));
+            let parsed: WidgetPreferences = serde_json::from_value(raw).unwrap();
+            assert_eq!(parsed.normalized().glass_style, expected);
+        }
+    }
+
+    #[test]
+    fn custom_skin_metadata_is_sanitized_and_deduplicated() {
+        let raw = json!({
+            "locked": false,
+            "pinnedProvider": null,
+            "autoRotateSeconds": 12,
+            "selectedSkin": "custom:lake",
+            "customSkins": [
+                {
+                    "id": " lake ",
+                    "name": "Lake",
+                    "fileName": "lake.png",
+                    "detectedTone": "unknown",
+                    "textTone": "neon",
+                    "accentColor": "blue"
+                },
+                {
+                    "id": "lake",
+                    "name": "Duplicate",
+                    "fileName": "duplicate.png",
+                    "detectedTone": "light",
+                    "textTone": "dark",
+                    "accentColor": "#112233"
+                },
+                {
+                    "id": "",
+                    "name": "Empty",
+                    "fileName": "empty.png",
+                    "detectedTone": "light",
+                    "textTone": "auto",
+                    "accentColor": "#112233"
+                },
+                {
+                    "id": "custom:nested",
+                    "name": "Nested",
+                    "fileName": "nested.png",
+                    "detectedTone": "dark",
+                    "textTone": "light",
+                    "accentColor": "#445566"
+                },
+                {
+                    "id": "../escape",
+                    "name": "Escape",
+                    "fileName": "escape.png",
+                    "detectedTone": "dark",
+                    "textTone": "auto",
+                    "accentColor": "#778899"
+                },
+                {
+                    "id": "folder\\escape",
+                    "name": "Escape",
+                    "fileName": "escape.png",
+                    "detectedTone": "dark",
+                    "textTone": "auto",
+                    "accentColor": "#778899"
+                },
+                {
+                    "id": "lake.v2",
+                    "name": "Noncanonical",
+                    "fileName": "lake.v2.png",
+                    "detectedTone": "dark",
+                    "textTone": "auto",
+                    "accentColor": "#778899"
+                }
+            ]
+        });
+        let parsed: WidgetPreferences =
+            serde_json::from_value(raw).expect("custom metadata should deserialize");
+        let normalized = parsed.normalized();
+
+        assert_eq!(normalized.selected_skin, "custom:lake");
+        assert_eq!(normalized.custom_skins.len(), 1);
+        let metadata = &normalized.custom_skins[0];
+        assert_eq!(metadata.id, "lake");
+        assert_eq!(metadata.name, "Lake");
+        assert_eq!(metadata.detected_tone, "dark");
+        assert_eq!(metadata.text_tone, "auto");
+        assert_eq!(metadata.accent_color, "#5A90D6");
+    }
+
+    #[test]
+    fn selected_custom_skin_falls_back_when_its_metadata_is_removed() {
+        let mut raw = legacy_preferences("custom:custom-123-abc");
+        raw.as_object_mut()
+            .expect("test fixture should be an object")
+            .insert(
+                "customSkins".into(),
+                json!([{
+                    "id": "custom-123-abc",
+                    "name": "Mismatched",
+                    "fileName": "another-file.png",
+                    "detectedTone": "dark",
+                    "textTone": "auto",
+                    "accentColor": "#112233"
+                }]),
+            );
+        let parsed: WidgetPreferences =
+            serde_json::from_value(raw).expect("invalid metadata should deserialize harmlessly");
+        let normalized = parsed.normalized();
+        assert!(normalized.custom_skins.is_empty());
+        assert_eq!(normalized.selected_skin, "glass");
+    }
 
     #[test]
     fn legacy_persistent_expansion_migrates_to_widget_mode() {

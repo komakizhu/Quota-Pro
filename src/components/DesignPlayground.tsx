@@ -3,7 +3,6 @@ import { DESKTOP_PALETTES, type DesktopPaletteName } from "../lib/desktopPalette
 import { quotaTier } from "../lib/format";
 import type { Language, ProviderSnapshot, WidgetPreferences, WidgetSkin, WidgetTheme } from "../types";
 import { QuotaCard, QuotaOrb } from "./QuotaCard";
-import { SupporterPanel } from "./SupporterPanel";
 
 type ErrorMode = "unavailable" | "stale" | "signed_out";
 type QuotaOrbMode = "healthy-orb" | "caution-orb" | "critical-orb";
@@ -16,14 +15,14 @@ const base: ProviderSnapshot = {
   weeklyWindow: { remainingPercent: 42, resetsAt: new Date(Date.now() + 3.2 * 86_400_000).toISOString(), windowSeconds: 604_800 },
   resetCredits: 1, resetCreditExpiresAt: [], updatedAt: new Date().toISOString(), status: "ok", message: null,
 };
-const preferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "expanded", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: "codex", autoRotateSeconds: 12, language: "en", appearance: "system", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const preferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "expanded", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: "codex", autoRotateSeconds: 12, autoCheckUpdates: true, language: "en", appearance: "system", selectedSkin: "glass", glassStyle: "dock", customSkins: [] };
 const defaults: Controls = { radius: 38, numberSize: 64, progressHeight: 6, brightness: 100, motion: 18 };
 const names: DesktopPaletteName[] = ["healthy", "caution", "critical", "unavailable", "stale", "signed_out"];
 const modes: Array<[Mode, string]> = [[74, "healthy"], [35, "caution"], [8, "critical"], ["weekly", "weekly"], ["healthy-orb", "healthyOrb"], ["caution-orb", "cautionOrb"], ["critical-orb", "criticalOrb"], ["weekly-orb", "weeklyOrb"], ["unavailable", "unavailable"], ["stale", "stale"], ["signed_out", "signedOut"], ["unavailable-orb", "unavailableOrb"], ["stale-orb", "staleOrb"], ["signed_out-orb", "signedOutOrb"]];
 const fields = ["--cool", "--glow", "--warm", "--progress-start", "--progress-end"] as const;
 const workbenchCopy = {
   "zh-CN": {
-    widget: "组件", blur: "Blur 皮肤", computer: "Computer 皮肤", supporter: "支持者皮肤",
+    widget: "柔光皮肤", computer: "Computer 皮肤", glass: "默认皮肤",
     previewState: "预览状态", previewTheme: "预览主题", language: "内容语言", light: "浅色", dark: "深色",
     geometryPreview: "几何预览", description: "配色为只读，始终来自桌面组件。以下几何调整仅用于此预览，并会在刷新后恢复默认。",
     source: "桌面来源：", cornerRadius: "圆角", mainNumber: "主数字", progressHeight: "进度条高度", brightness: "亮度", motion: "动效", reset: "重置几何设置",
@@ -31,7 +30,7 @@ const workbenchCopy = {
     healthy: "健康", caution: "注意", critical: "紧急", weekly: "每周", unavailable: "不可用", stale: "数据过期", signedOut: "未登录", healthyOrb: "健康圆形", cautionOrb: "注意圆形", criticalOrb: "紧急圆形", weeklyOrb: "每周圆形", unavailableOrb: "不可用圆形", staleOrb: "数据过期圆形", signedOutOrb: "未登录圆形",
   },
   en: {
-    widget: "Widget", blur: "Blur skin", computer: "Computer skin", supporter: "Supporter skins",
+    widget: "Soft Light skin", computer: "Computer skin", glass: "Default skin",
     previewState: "Preview state", previewTheme: "Preview theme", language: "Content language", light: "Light", dark: "Dark",
     geometryPreview: "Geometry preview", description: "The palette is read-only and always comes from the desktop widget. Geometry changes below exist only in this preview and reset on refresh.",
     source: "Desktop source:", cornerRadius: "Corner radius", mainNumber: "Main number", progressHeight: "Progress height", brightness: "Brightness", motion: "Motion", reset: "Reset geometry",
@@ -69,8 +68,7 @@ export function DesignPlayground() {
   const [mode, setMode] = useState<Mode>(() => (query.get("mode") as Mode) || 74);
   const [controls, setControls] = useState<Controls>(defaults);
   const [language, setLanguage] = useState<Language>(() => query.get("language") === "en" ? "en" : "zh-CN");
-  const [previewTab, setPreviewTab] = useState<"widget" | "blur" | "computer" | "supporter">("widget");
-  const [celebrationKey, setCelebrationKey] = useState(0);
+  const [previewTab, setPreviewTab] = useState<"widget" | "computer" | "glass">("widget");
   const snapshot = useMemo(() => makeSnapshot(mode), [mode]);
   const active = paletteName(snapshot);
   const t = workbenchCopy[language];
@@ -87,14 +85,14 @@ export function DesignPlayground() {
 
   return <main className={`design-workbench design-workbench--${theme}`}>
     <section className="design-stage" aria-label={t.widget}>
-      <div className="design-page-tabs" role="tablist" aria-label={t.widget}><button role="tab" aria-selected={previewTab === "widget"} className={previewTab === "widget" ? "is-active" : ""} onClick={() => setPreviewTab("widget")}>{t.widget}</button><button role="tab" aria-selected={previewTab === "blur"} className={previewTab === "blur" ? "is-active" : ""} onClick={() => setPreviewTab("blur")}>{t.blur}</button><button role="tab" aria-selected={previewTab === "computer"} className={previewTab === "computer" ? "is-active" : ""} onClick={() => setPreviewTab("computer")}>{t.computer}</button><button role="tab" aria-selected={previewTab === "supporter"} className={previewTab === "supporter" ? "is-active" : ""} onClick={() => setPreviewTab("supporter")}>{t.supporter}</button></div>
-      {previewTab !== "supporter" ? <><div className="design-preview-switch" role="group" aria-label={t.previewState}>
+      <div className="design-page-tabs" role="tablist" aria-label={t.widget}><button role="tab" aria-selected={previewTab === "widget"} className={previewTab === "widget" ? "is-active" : ""} onClick={() => setPreviewTab("widget")}>{t.widget}</button><button role="tab" aria-selected={previewTab === "computer"} className={previewTab === "computer" ? "is-active" : ""} onClick={() => setPreviewTab("computer")}>{t.computer}</button><button role="tab" aria-selected={previewTab === "glass"} className={previewTab === "glass" ? "is-active" : ""} onClick={() => setPreviewTab("glass")}>{t.glass}</button></div>
+      <><div className="design-preview-switch" role="group" aria-label={t.previewState}>
         {modes.map(([value, label]) => <button key={label} className={mode === value ? "is-active" : ""} onClick={() => setMode(value)}>{t[label as keyof typeof t]}</button>)}
       </div>
       <div className="design-theme-switch" role="group" aria-label={t.previewTheme}>
         {(["light", "dark"] as const).map((value) => <button key={value} className={theme === value ? "is-active" : ""} onClick={() => setTheme(value)}>{value === "light" ? t.light : t.dark}</button>)}
       </div>
-      <div className={isOrb ? "design-orb-frame" : "design-card-frame"}>{render(snapshot, previewTab === "blur" ? "blur" : previewTab === "computer" ? "computer" : "default")}</div></> : <><button className="design-success-preview" type="button" onClick={() => setCelebrationKey((value) => value + 1)}>{t.verification}</button><div className="design-supporter-frame"><SupporterPanel preview previewLanguage={language} celebrationKey={celebrationKey} onStatus={() => {}} /></div></>}
+      <div className={isOrb ? "design-orb-frame" : "design-card-frame"}>{render(snapshot, previewTab === "computer" ? "computer" : previewTab === "glass" ? "glass" : "default")}</div></>
     </section>
     <aside className="design-controls">
       <header><p className="design-kicker">QUOTA FLOAT · PREVIEW</p><h1>{t.geometryPreview}</h1><p className="design-description">{t.description}</p></header>

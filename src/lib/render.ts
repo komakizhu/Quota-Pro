@@ -23,6 +23,20 @@ export function widgetScaleForSize(size: number, baseSize: number, devicePixelRa
 }
 
 /**
+ * The shell can follow every native preview, while text/layout stays on the
+ * physical-pixel grid during a drag. A one-pixel step avoids fractional CSS
+ * footprints without introducing a visible staircase in the resize gesture.
+ * The final committed size uses the same calculation as the preview.
+ */
+export function resizeContentScaleForSize(size: number, baseSize: number, devicePixelRatio = readDevicePixelRatio()): number {
+  if (!Number.isFinite(baseSize) || baseSize <= 0) return 1;
+  const ratio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  const snapped = snapLogicalSizeToDevicePixels(size, ratio);
+  const physicalPixels = Math.round(snapped * ratio);
+  return (physicalPixels / ratio) / baseSize;
+}
+
+/**
  * The default orb follows the Dock-like proportional corner treatment. Keep
  * the radius on the same physical-pixel grid as the orb so the outer edge
  * does not land between WebView pixels on Retina displays.

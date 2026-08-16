@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { QuotaCard, QuotaOrb } from "./components/QuotaCard";
-import { beginWidgetResize, cancelWidgetResize, fetchSnapshots, finishWidgetResize, getPreferences, getSupporterStatus, listenDesktopEvents, previewWidgetResize, resetWidgetSize, setAlwaysOnTop, setWidgetMode, startDragging, syncWidgetAppearance, updatePreferences } from "./lib/bridge";
+import { beginWidgetResize, cancelWidgetResize, fetchSnapshots, finishWidgetResize, getCustomSkinAsset, getPlatformCapabilities, getPreferences, listenDesktopEvents, previewWidgetResize, resetWidgetSize, setAlwaysOnTop, setWidgetMode, showSettings, startDragging, syncWidgetAppearance, syncWidgetLayout, updatePreferences } from "./lib/bridge";
 import { needsFastRefresh, quotaTier } from "./lib/format";
 import { checkForAppUpdate, openReleasePage } from "./lib/appUpdate";
 import { copy, normalizeLanguage } from "./lib/i18n";
 import { mergeSnapshots } from "./lib/snapshots";
 import { DESKTOP_PALETTES } from "./lib/desktopPalette";
-import { useDevicePixelRatio, widgetScaleForSize } from "./lib/render";
+import { normalizeGlassStyle } from "./lib/glass";
 import type { ResizeEdge } from "./lib/resize";
-import type { ProviderSnapshot, ToggleCorner, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin, WidgetTheme } from "./types";
+import type { CustomSkinAsset, PlatformCapabilities, ProviderSnapshot, ToggleCorner, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin, WidgetTheme } from "./types";
 
-const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: null, autoRotateSeconds: 12, language: "zh-CN", appearance: "light", license: null, licenses: [], unlockedSkin: null, unlockedSkins: [], selectedSkin: "default" };
+const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: null, autoRotateSeconds: 12, autoCheckUpdates: true, language: "zh-CN", appearance: "light", selectedSkin: "glass", glassStyle: "dock", customSkins: [] };
 const DEFAULT_COMPACT_SIZE = 72;
 const DEFAULT_EXPANDED_SIZE = 306;
 const COMPACT_MIN_SIZE = 48;
@@ -35,39 +35,49 @@ export default function App() {
   const [snapshots, setSnapshots] = useState<ProviderSnapshot[]>([]);
   const [preferences, setPreferences] = useState(DEFAULT_PREFS);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [consumingProviders, setConsumingProviders] = useState<Set<string>>(() => new Set());
+  const [customSkinAsset, setCustomSkinAsset] = useState<CustomSkinAsset | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [pendingWidgetMode, setPendingWidgetMode] = useState<WidgetMode | null>(null);
   const [showUpdateFallback, setShowUpdateFallback] = useState(false);
+  const [platformCapabilities, setPlatformCapabilities] = useState<PlatformCapabilities>({ nativeGlass: false, supportsLiquidGlass: false });
   const [systemDark, setSystemDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
-  const devicePixelRatio = useDevicePixelRatio();
   const failures = useRef(0);
-  const previousPrimary = useRef(new Map<string, number>());
-  const consumptionTimers = useRef(new Map<string, number>());
   const language = normalizeLanguage(preferences.language);
   const t = copy[language];
   const operation = language === "zh-CN" ? {
     listenerFailed: "桌面事件监听启动失败。",
     settingsFailed: "设置保存失败，已恢复之前的状态。",
-    alwaysOnTopFailed: "置顶状态切换失败。",
     expandFailed: "组件展开失败。",
     collapseFailed: "组件收起失败。",
     resizeFailed: "组件尺寸保存失败，已恢复之前的大小。",
     releaseOpenFailed: "无法打开 GitHub Releases。",
+    openSettingsFailed: "无法打开设置。",
   } : {
     listenerFailed: "Desktop event listener failed to start.",
     settingsFailed: "Settings could not be saved. Previous state restored.",
-    alwaysOnTopFailed: "Always-on-top toggle failed.",
     expandFailed: "Widget expand failed.",
     collapseFailed: "Widget collapse failed.",
     resizeFailed: "Widget size could not be saved. Previous size restored.",
     releaseOpenFailed: "Could not open GitHub Releases.",
+    openSettingsFailed: "Could not open Settings.",
   };
   const theme: WidgetTheme = preferences.appearance === "system" ? (systemDark ? "dark" : "light") : preferences.appearance;
-  const skin: WidgetSkin = preferences.unlockedSkins.includes(preferences.selectedSkin as Exclude<WidgetSkin, "default">)
-    && (preferences.selectedSkin === "blur" || preferences.selectedSkin === "computer")
+  const skin: WidgetSkin = preferences.selectedSkin === "computer" || preferences.selectedSkin === "glass"
     ? preferences.selectedSkin
     : "default";
+  const selectedCustomSkin = preferences.selectedSkin.startsWith("custom:")
+    ? preferences.customSkins.find((item) => item.id === preferences.selectedSkin.slice("custom:".length)) ?? null
+    : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    setCustomSkinAsset(null);
+    if (!selectedCustomSkin) return () => { cancelled = true; };
+    void getCustomSkinAsset(selectedCustomSkin.id).then((asset) => { if (!cancelled) setCustomSkinAsset(asset); }).catch(() => {
+      if (!cancelled) setCustomSkinAsset(null);
+    });
+    return () => { cancelled = true; };
+  }, [selectedCustomSkin?.id]);
 
   useEffect(() => {
     // This only reconciles the transparent-window safety inset after a theme
@@ -107,21 +117,6 @@ export default function App() {
       const hasFailure = values.some((item) => item.status !== "ok");
       if (hasFailure) failures.current += 1;
       else failures.current = 0;
-      for (const item of values) {
-        const nextPrimary = item.shortWindow?.remainingPercent;
-        const previous = previousPrimary.current.get(item.provider);
-        if (nextPrimary !== undefined && previous !== undefined && nextPrimary < previous) {
-          setConsumingProviders((current) => new Set(current).add(item.provider));
-          const oldTimer = consumptionTimers.current.get(item.provider);
-          if (oldTimer !== undefined) window.clearTimeout(oldTimer);
-          const timer = window.setTimeout(() => {
-            setConsumingProviders((current) => { const next = new Set(current); next.delete(item.provider); return next; });
-            consumptionTimers.current.delete(item.provider);
-          }, 5 * 60_000);
-          consumptionTimers.current.set(item.provider, timer);
-        }
-        if (nextPrimary !== undefined) previousPrimary.current.set(item.provider, nextPrimary);
-      }
       setSnapshots((current) => mergeSnapshots(current, values));
     } catch {
       failures.current += 1;
@@ -140,24 +135,41 @@ export default function App() {
     const expandedSize = Number.isFinite(value.expandedSize) && (value.expandedSize ?? 0) > 0
       ? value.expandedSize!
       : DEFAULT_EXPANDED_SIZE * factor;
-    return {
+    const customSkins = Array.isArray(value.customSkins) ? value.customSkins : [];
+    const requestedSkin = typeof value.selectedSkin === "string" ? value.selectedSkin : DEFAULT_PREFS.selectedSkin;
+    const migratedSkin = requestedSkin === "blur" ? "default" : requestedSkin;
+    const isBuiltinSkin = migratedSkin === "default" || migratedSkin === "computer" || migratedSkin === "glass";
+    const isKnownCustomSkin = migratedSkin.startsWith("custom:")
+      && customSkins.some((skin) => skin && typeof skin.id === "string" && `custom:${skin.id}` === migratedSkin);
+    const normalized = {
       ...DEFAULT_PREFS,
       ...value,
       widgetMode: value.widgetMode === "expanded" || value.widgetMode === "compact" ? value.widgetMode : (value.stayExpanded ? "expanded" : "compact"),
       widgetSize,
+      autoCheckUpdates: typeof value.autoCheckUpdates === "boolean" ? value.autoCheckUpdates : true,
       compactSize: Math.min(COMPACT_MAX_SIZE, Math.max(COMPACT_MIN_SIZE, compactSize)),
       expandedSize: Math.min(EXPANDED_MAX_SIZE, Math.max(EXPANDED_MIN_SIZE, expandedSize)),
       toggleCorner: (value.toggleCorner === "nw" || value.toggleCorner === "ne" || value.toggleCorner === "sw" || value.toggleCorner === "se" ? value.toggleCorner : "ne") as ToggleCorner,
       language: normalizeLanguage(value.language),
+      selectedSkin: isBuiltinSkin || isKnownCustomSkin ? migratedSkin : DEFAULT_PREFS.selectedSkin,
+      glassStyle: normalizeGlassStyle(value as Partial<WidgetPreferences> & { glassBlur?: unknown }),
+      customSkins,
     };
+    delete (normalized as WidgetPreferences & { glassBlur?: unknown }).glassBlur;
+    return normalized;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getPlatformCapabilities().then((capabilities) => {
+      if (!cancelled) setPlatformCapabilities(capabilities);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     void refresh(true);
     void (async () => {
-      // Validate and normalize stored supporter state before allowing it to
-      // affect rendering, avoiding a stale preference response re-enabling it.
-      await getSupporterStatus().catch(() => undefined);
       const value = await getPreferences().catch(async () => {
         // A WebView can occasionally issue its first invoke while it is
         // resuming. Retry once, then retain the already-safe defaults without
@@ -169,10 +181,6 @@ export default function App() {
       setPreferences(normalized);
       await setWidgetMode(normalized.widgetMode);
     })().catch(() => setPreferences(DEFAULT_PREFS));
-    return () => {
-      for (const timer of consumptionTimers.current.values()) window.clearTimeout(timer);
-      consumptionTimers.current.clear();
-    };
   }, [normalizePreferences, refresh]);
 
   useEffect(() => {
@@ -185,9 +193,10 @@ export default function App() {
   }, [checkUpdate, normalizePreferences, operation.listenerFailed, refresh]);
 
   useEffect(() => {
+    if (!preferences.autoCheckUpdates) return;
     const timer = window.setTimeout(() => checkUpdate(false), 12_000);
     return () => window.clearTimeout(timer);
-  }, [checkUpdate]);
+  }, [checkUpdate, preferences.autoCheckUpdates]);
 
   const refreshMs = useMemo(() => {
     const backoff = failures.current === 0 ? 5 * 60_000 : Math.min(30 * 60_000, 30_000 * 2 ** (failures.current - 1));
@@ -221,6 +230,15 @@ export default function App() {
     : snapshots[activeIndex % Math.max(1, snapshots.length)] ?? INITIAL_SNAPSHOT;
 
   const primaryPercent = current?.shortWindow?.remainingPercent ?? current?.weeklyWindow?.remainingPercent ?? null;
+  const southwestWeeklyPrimary = !preferences.locked && skin !== "computer" && preferences.toggleCorner === "sw" && current?.shortWindow === null && current?.weeklyWindow !== null;
+
+  useEffect(() => {
+    // The southwest weekly-primary footer moves the collapse button inside the
+    // card. Keep native geometry on the same anchor when the active provider
+    // or a refresh changes whether that footer is displayed.
+    void syncWidgetLayout(southwestWeeklyPrimary).catch(() => undefined);
+  }, [southwestWeeklyPrimary]);
+
   const tier = quotaTier(primaryPercent);
   const paletteName = current.status === "unavailable" || current.status === "stale" || current.status === "signed_out"
     ? current.status
@@ -230,11 +248,13 @@ export default function App() {
   // one another through CSS defaults or preview state.
   const cardStyle = {
     ...(paletteName ? DESKTOP_PALETTES[theme][paletteName] : {}),
-    "--widget-scale": String(widgetScaleForSize(
-      preferences.widgetMode === "compact" ? preferences.compactSize : preferences.expandedSize,
-      preferences.widgetMode === "compact" ? DEFAULT_COMPACT_SIZE : DEFAULT_EXPANDED_SIZE,
-      devicePixelRatio,
-    )),
+    ...(selectedCustomSkin && customSkinAsset ? {
+      "--custom-skin-image": `url("${customSkinAsset.dataUrl}")`,
+      "--custom-skin-overlay": (selectedCustomSkin.textTone === "light" || (selectedCustomSkin.textTone === "auto" && selectedCustomSkin.detectedTone === "light")) ? "rgba(0,0,0,.42)" : "rgba(255,255,255,.24)",
+      "--custom-text-color": (selectedCustomSkin.textTone === "light" || (selectedCustomSkin.textTone === "auto" && selectedCustomSkin.detectedTone === "light")) ? "#FFFFFF" : "#111419",
+      "--custom-muted-color": (selectedCustomSkin.textTone === "light" || (selectedCustomSkin.textTone === "auto" && selectedCustomSkin.detectedTone === "light")) ? "rgba(255,255,255,.78)" : "rgba(17,20,25,.72)",
+      "--custom-accent-color": selectedCustomSkin.accentColor,
+    } : {}),
   } as CSSProperties;
 
   const savePreferences = useCallback((next: WidgetPreferences) => {
@@ -244,13 +264,23 @@ export default function App() {
     void updatePreferences(next).catch(() => { setPreferences(previous); setOperationError(operation.settingsFailed); });
   }, [operation.settingsFailed, preferences]);
 
+  const toggleAlwaysOnTop = useCallback(async () => {
+    try {
+      const saved = await setAlwaysOnTop(!preferences.alwaysOnTop);
+      setPreferences(normalizePreferences(saved));
+      setOperationError(null);
+    } catch {
+      setOperationError(operation.settingsFailed);
+    }
+  }, [normalizePreferences, operation.settingsFailed, preferences.alwaysOnTop]);
+
   const changeWidgetMode = useCallback(async (mode: WidgetMode) => {
     if (pendingWidgetMode || mode === preferences.widgetMode) return;
     const previous = preferences;
     setPendingWidgetMode(mode);
     setOperationError(null);
     try {
-      const saved = await setWidgetMode(mode);
+      const saved = await setWidgetMode(mode, southwestWeeklyPrimary);
       if (saved) setPreferences(normalizePreferences(saved));
     } catch {
       setPreferences(previous);
@@ -258,7 +288,7 @@ export default function App() {
     } finally {
       setPendingWidgetMode(null);
     }
-  }, [normalizePreferences, operation.collapseFailed, operation.expandFailed, pendingWidgetMode, preferences]);
+  }, [normalizePreferences, operation.collapseFailed, operation.expandFailed, pendingWidgetMode, preferences, southwestWeeklyPrimary]);
 
   const beginResize = useCallback((mode: WidgetMode, edge: ResizeEdge) => beginWidgetResize(mode, edge), []);
   const previewResize = useCallback((size: number) => previewWidgetResize(size), []);
@@ -290,7 +320,7 @@ export default function App() {
   }, [normalizePreferences, operation.resizeFailed, preferences]);
 
   if (preferences.widgetMode === "compact") {
-    return <QuotaOrb snapshot={current} language={language} onExpand={() => { if (!pendingWidgetMode) { void refresh(true); void changeWidgetMode("expanded"); } }} onDrag={() => startDragging()} onResizeStart={(edge) => beginResize("compact", edge)} onResizePreview={previewResize} onResizeCommit={(size) => commitResize("compact", size)} onResizeCancel={cancelWidgetResize} onResizeReset={() => resetResize("compact")} resizeSize={preferences.compactSize} theme={theme} skin={skin} style={cardStyle} />;
+    return <QuotaOrb snapshot={current} language={language} onExpand={() => { if (!pendingWidgetMode) { void refresh(true); void changeWidgetMode("expanded"); } }} onDrag={() => startDragging()} onResizeStart={(edge) => beginResize("compact", edge)} onResizePreview={previewResize} onResizeCommit={(size) => commitResize("compact", size)} onResizeCancel={cancelWidgetResize} onResizeReset={() => resetResize("compact")} resizeSize={preferences.compactSize} theme={theme} skin={skin} glassStyle={preferences.glassStyle === "liquid" && !platformCapabilities.supportsLiquidGlass ? "dock" : preferences.glassStyle} nativeGlass={platformCapabilities.nativeGlass} customSkin={Boolean(selectedCustomSkin && customSkinAsset)} style={cardStyle} />;
   }
 
   return (
@@ -303,7 +333,8 @@ export default function App() {
       onTogglePin={() => savePreferences({ ...preferences, pinnedProvider: preferences.pinnedProvider ? null : current.provider })}
       onCollapse={() => { void changeWidgetMode("compact"); }}
       toggleCorner={preferences.toggleCorner}
-      onLock={() => { setOperationError(null); void setAlwaysOnTop(!preferences.alwaysOnTop).then((value) => setPreferences({ ...DEFAULT_PREFS, ...value, language: normalizeLanguage(value.language) })).catch(() => setOperationError(operation.alwaysOnTopFailed)); }}
+      onLock={() => void toggleAlwaysOnTop()}
+      onSettings={() => { setOperationError(null); void showSettings().catch(() => setOperationError(operation.openSettingsFailed)); }}
       onDrag={() => startDragging()}
       onResizeStart={(edge) => beginResize("expanded", edge)}
       onResizePreview={previewResize}
@@ -312,9 +343,11 @@ export default function App() {
       onResizeReset={() => resetResize("expanded")}
       resizeSize={preferences.expandedSize}
       onRefresh={() => refresh(true)}
-      isConsuming={consumingProviders.has(current.provider)}
       theme={theme}
       skin={skin}
+      glassStyle={preferences.glassStyle === "liquid" && !platformCapabilities.supportsLiquidGlass ? "dock" : preferences.glassStyle}
+      nativeGlass={platformCapabilities.nativeGlass}
+      customSkin={Boolean(selectedCustomSkin && customSkinAsset)}
       style={cardStyle}
       notice={showUpdateFallback && operationError ? <><span>{operationError}</span><button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={() => void openReleasePage().catch(() => setOperationError(operation.releaseOpenFailed))}>GitHub Releases</button></> : operationError}
     />

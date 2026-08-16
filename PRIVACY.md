@@ -10,12 +10,16 @@ Quota Float is designed to be local-first and minimal.
 
 ## What It Stores
 
-Quota Float stores only widget preferences in its own application config directory:
+Quota Float stores widget preferences in its own application config directory, including:
 
 - locked state
 - always-on-top state
 - pinned provider
 - auto-rotate interval
+- appearance, widget sizing, and selected skin
+- custom-skin display names, text-tone choices, accent colors, and generated asset filenames
+
+When a user imports a custom skin, the app decodes it locally, removes embedded image metadata, resizes it, and stores the result as a PNG under the application config directory's `skins/` folder for rendering the selected widget skin. The source image and its local path are not copied into preferences or retained by the app. Deleting a custom skin removes its catalog entry and moves the managed PNG out of the active asset path before local cleanup.
 
 It does not copy or persist Codex tokens, account IDs, raw quota responses, user prompts, chat history, or local file paths.
 
@@ -27,6 +31,7 @@ The app only calls these quota-related HTTPS endpoints from the local desktop pr
 - `https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`
 
 No telemetry, analytics, crash reporting, or third-party tracking is included.
+Custom skin images and metadata are never uploaded or sent to the quota service.
 
 ## Logging
 

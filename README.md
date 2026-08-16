@@ -36,7 +36,7 @@ A lightweight Windows/macOS desktop widget that keeps your Codex quota visible f
 
 ![Quota Float dark healthy-state preview](docs/images/quota-v0.2.4-dark-healthy.jpg)
 
-The preview uses mock quota data only; it does not contain account, device, or license information.
+The preview uses mock quota data only; it does not contain account or device information.
 
 ## Repository Metadata
 
@@ -74,17 +74,17 @@ Please use GitHub Issues for bugs, compatibility reports, and feature requests:
 
 https://github.com/change-42-yhmm/quota-float/issues
 
-## Supporter skins
+## Built-in skins
 
-The standard installer includes the free default appearances and can unlock optional supporter skins with a signed, device-bound license. Licenses are verified locally; the app does not send device request codes or license text to a service.
+The standard installer includes Default (frosted glass), Soft Light, and Computer as permanently free built-in skins. Default is the frosted-glass skin and offers light, medium, and heavy blur levels in Settings.
 
 ### Dark healthy-state previews
 
-Blur and Computer are optional supporter skins. These previews use mock quota data and do not reveal any account, device, or license information.
+These previews use mock quota data and do not reveal any account or device information.
 
-| Blur | Computer |
+| Soft Light | Computer |
 | --- | --- |
-| <img src="docs/images/skin-blur-dark-healthy.jpg" alt="Blur supporter skin in a dark healthy-state preview" width="260"> | <img src="docs/images/skin-computer-dark-healthy.jpg" alt="Computer supporter skin in a dark healthy-state preview" width="260"> |
+| <img src="docs/images/quota-v0.2.4-dark-healthy.jpg" alt="Soft Light skin in a dark healthy-state preview" width="260"> | <img src="docs/images/skin-computer-dark-healthy.jpg" alt="Computer skin in a dark healthy-state preview" width="260"> |
 
 ## Privacy Boundary
 

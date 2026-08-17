@@ -17,6 +17,19 @@ GitHub 需要：
 - GitHub Actions 已启用
 - 代码已推送到默认分支
 
+### Tauri 自动更新签名
+
+自动更新仍由 Tauri updater 的公钥校验。仓库的 `src-tauri/tauri.conf.json` 保存公钥，私钥不要提交到代码库。为避免 GitHub Secrets 的多行换行被破坏，建议将完整私钥文件编码为单行 Base64，然后保存为以下两个 Actions secrets：
+
+```bash
+base64 < ~/.tauri/quota-pro.key | tr -d '\n'
+```
+
+- `TAURI_SIGNING_PRIVATE_KEY_B64`：上面命令输出的完整单行结果。
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：生成该私钥时设置的密码。
+
+Release Workflow 会在 runner 上解码私钥到临时文件，并通过 `TAURI_SIGNING_PRIVATE_KEY` 路径传给 Tauri。不要只复制私钥中间的 Base64 行，也不要把 `tauri.conf.json` 中的公钥当成私钥。丢失原私钥后不能无缝替换，否则已安装版本无法验证后续更新。
+
 macOS Universal 构建需要的 Rust targets 已经在 CI/release workflow 中自动安装：
 
 ```bash

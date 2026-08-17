@@ -43,11 +43,32 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Prepare Tauri updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY_B64" ]]; then
+            echo "Missing repository secret TAURI_SIGNING_PRIVATE_KEY_B64" >&2
+            exit 1
+          fi
+          key_path="$RUNNER_TEMP/quota-pro-updater.key"
+          if base64 --help 2>&1 | grep -q -- '--decode'; then
+            printf '%s' "$TAURI_SIGNING_PRIVATE_KEY_B64" | base64 --decode > "$key_path"
+          else
+            printf '%s' "$TAURI_SIGNING_PRIVATE_KEY_B64" | base64 -D > "$key_path"
+          fi
+          chmod 600 "$key_path"
+          if ! grep -q '^untrusted comment:' "$key_path"; then
+            echo "TAURI_SIGNING_PRIVATE_KEY_B64 does not contain a complete Tauri/minisign private key" >&2
+            exit 1
+          fi
+          echo "TAURI_SIGNING_PRIVATE_KEY=$key_path" >> "$GITHUB_ENV"
       - name: Build macOS installer DMG with PKG and quarantine helper
         if: runner.os == 'macOS'
         continue-on-error: true
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           npm run tauri build -- --target universal-apple-darwin
@@ -69,7 +90,6 @@ jobs:
         if: runner.os == 'Windows'
         continue-on-error: true
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri build
       - name: Upload Windows installer artifacts
@@ -83,7 +103,6 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}

@@ -4,7 +4,7 @@ Quota Pro 是一个 Windows/macOS 桌面悬浮工具，用来在桌面上持续�
 
 ## 项目来源
 
-本项目基于原始项目 [change-42-yhmm/quota-float](https://github.com/change-42-yhmm/quota-float) 开发，当前维护 fork 为 [komakizhu/quota-float-switch](https://github.com/komakizhu/quota-float-switch)。原项目提供了额度读取、Tauri 桌面窗口和基础悬浮卡片；本 fork 重点修复交互、窗口几何和 macOS 视觉体验，并继续保留原项目的本地优先设计。
+本项目基于原始项目 [change-42-yhmm/quota-float](https://github.com/change-42-yhmm/quota-float) 开发，当前维护仓库为 [komakizhu/Quota-Pro](https://github.com/komakizhu/Quota-Pro)。原项目提供了额度读取、Tauri 桌面窗口和基础悬浮卡片；本项目重点修复交互、窗口几何和 macOS 视觉体验，并继续保留原项目的本地优先设计。
 
 ## 主要改进
 
@@ -40,7 +40,7 @@ Quota Pro 是一个 Windows/macOS 桌面悬浮工具，用来在桌面上持续�
 
 ### 1. 安装并启动
 
-从 fork 的 [Releases](https://github.com/komakizhu/quota-float-switch/releases) 下载对应系统的安装包。首次启动前，请先在本机登录 Codex Desktop；Quota Pro 会读取现有登录状态来请求额度数据。
+从 [Quota Pro Releases](https://github.com/komakizhu/Quota-Pro/releases) 下载对应系统的安装包。首次启动前，请先在本机登录 Codex Desktop；Quota Pro 会读取现有登录状态来请求额度数据。
 
 macOS 如果提示应用来自未验证开发者，请在“系统设置 → 隐私与安全性”中允许打开，或对已签名的 `.app` 右键选择“打开”。Windows 用户按安装程序提示完成安装即可。
 
@@ -134,7 +134,7 @@ npm run tauri build
 
 ## 反馈与贡献
 
-请在 [GitHub Issues](https://github.com/komakizhu/quota-float-switch/issues) 提交 Bug、兼容性报告和功能建议。提交代码前请先说明问题场景和复现步骤。
+请在 [GitHub Issues](https://github.com/komakizhu/Quota-Pro/issues) 提交 Bug、兼容性报告和功能建议。提交代码前请先说明问题场景和复现步骤。
 
 ## 许可证
 

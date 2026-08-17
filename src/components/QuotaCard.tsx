@@ -6,6 +6,7 @@ import { consumeOrbClick, createOrbDragState, recordOrbDrag } from "../lib/orbGe
 import { orbCornerRadiusForSize, resizeContentScaleForSize, useDevicePixelRatio, widgetScaleForSize } from "../lib/render";
 import { COMPACT_SIZE_RANGE, EXPANDED_SIZE_RANGE, getOrbResizeHitSizes, getResizeEdge, resizeHasMoved, resizePointerDelta, resizeSizeFromPointer, type ResizeEdge } from "../lib/resize";
 import { createResizePreviewScheduler, type ResizePreviewScheduler } from "../lib/resizePreview";
+import type { QuotaPrediction } from "../lib/quotaPrediction";
 import type { GlassStyle, Language, ProviderSnapshot, ToggleCorner, WidgetPreferences, WidgetSkin, WidgetTheme } from "../types";
 import computerOrbBaseUrl from "../../assets/computer-orb-base.svg";
 import computerOrbHealthyUrl from "../../assets/computer-orb-screen-healthy.svg";
@@ -36,6 +37,7 @@ interface Props {
   onResizeReset?: () => Promise<void>;
   resizeSize?: number;
   onRefresh?: () => void;
+  prediction?: QuotaPrediction | null;
   notice?: ReactNode;
   initialShowCreditTip?: boolean;
   theme?: WidgetTheme;
@@ -122,6 +124,7 @@ export const QuotaCard = memo(function QuotaCard({
   onResizeReset,
   resizeSize = 306,
   onRefresh,
+  prediction = null,
   notice = null,
   initialShowCreditTip = false,
   theme,
@@ -187,6 +190,17 @@ export const QuotaCard = memo(function QuotaCard({
   const creditExpirations = useMemo(() => (snapshot.resetCreditExpiresAt ?? []).map((value, index) => {
     return t.creditItem(index, formatDateTime(value, language));
   }), [language, snapshot.resetCreditExpiresAt, t]);
+  const forecastText = useMemo(() => {
+    if (!prediction) return null;
+    const number = (value: number | null) => value === null ? null : new Intl.NumberFormat(language === "en" ? "en-US" : "zh-CN", { maximumFractionDigits: 1 }).format(Math.max(0, value));
+    const daily = number(prediction.recommendedDailyPercent === null ? null : Math.min(100, prediction.recommendedDailyPercent));
+    const days = number(prediction.daysAtAverage ?? prediction.daysUntilReset);
+    if (!days && !daily) return null;
+    return {
+      days: days ? t.forecastRemainingDays(days) : null,
+      daily: daily ? t.forecastDailyBudget(daily) : null,
+    };
+  }, [language, prediction, t]);
 
   const resizeClass = activeResizeEdge ?? hoveredResizeEdge;
   const isExcludedResizeTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, nav"));
@@ -376,6 +390,10 @@ export const QuotaCard = memo(function QuotaCard({
                 ? <ComputerProgress percent={displayPercent} label={displayingWeeklyAsPrimary ? t.weeklyAvailableLabel(displayPercent) : t.availableLabel(displayPercent)} />
                 : <div className="progress" role="progressbar" aria-label={displayingWeeklyAsPrimary ? t.weeklyAvailableLabel(displayPercent) : t.availableLabel(displayPercent)} aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayPercent}><span style={{ width: `${displayPercent}%` }} /></div>}
             <p className="reset-time">{formatResetTime(displayWindow?.resetsAt ?? null, new Date(), language)}{displayWindow?.resetsAt ? ` · ${formatDateTime(displayWindow.resetsAt, language)}` : ""}</p>
+            {forecastText ? <div className="quota-forecast" aria-label={language === "en" ? "Quota forecast" : "额度预测"}>
+              {forecastText.days ? <p>{forecastText.days}</p> : null}
+              {forecastText.daily ? <p>{forecastText.daily}</p> : null}
+            </div> : null}
             <footer className="card-footer">
               <div className="weekly-metric">
                 {displayingWeeklyAsPrimary

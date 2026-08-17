@@ -14,8 +14,8 @@
     {
       "identifier": "opener:allow-open-url",
       "allow": [
-        { "url": "https://github.com/komakizhu/quota-float-switch" },
-        { "url": "https://github.com/komakizhu/quota-float-switch/*" }
+        { "url": "https://github.com/komakizhu/Quota-Pro" },
+        { "url": "https://github.com/komakizhu/Quota-Pro/*" }
       ]
     },
     "window-state:default"

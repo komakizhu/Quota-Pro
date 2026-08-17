@@ -491,6 +491,28 @@ it("applies the Glass skin to the card without changing its shape classes", () =
 });
 
 describe("QuotaCard resize gestures", () => {
+  it("renders the quota forecast directly below the reset time", () => {
+    render(
+      <QuotaCard
+        snapshot={{ ...snapshot, shortWindow: { ...snapshot.shortWindow!, resetsAt: "2026-08-20T12:00:00Z" } }}
+        preferences={preferences}
+        providerCount={1}
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+        onTogglePin={vi.fn()}
+        onLock={vi.fn()}
+        onCollapse={vi.fn()}
+        toggleCorner="nw"
+        onDrag={vi.fn()}
+        prediction={{ historyDays: 7, averageDailyUsagePercent: 10, daysAtAverage: 4.2, daysUntilReset: 3, recommendedDailyPercent: 16.7 }}
+      />,
+    );
+    const resetTime = screen.getByText(/resets in|Reset time unknown/);
+    const forecast = screen.getByText("Remaining quota can last 4.2 days");
+    expect(resetTime.nextElementSibling).toBe(forecast.parentElement);
+    expect(screen.getByText("Recommended daily usage: 16.7%")).toBeTruthy();
+  });
+
   it("starts moving from the card header instead of treating the contents wrapper as a resize box", () => {
     const onDrag = vi.fn();
     render(

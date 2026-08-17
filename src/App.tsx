@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { QuotaCard, QuotaOrb } from "./components/QuotaCard";
 import { beginWidgetResize, cancelWidgetResize, fetchSnapshots, finishWidgetResize, getCustomSkinAsset, getPlatformCapabilities, getPreferences, listenDesktopEvents, previewWidgetResize, resetWidgetSize, setAlwaysOnTop, setWidgetMode, showSettings, startDragging, syncWidgetAppearance, syncWidgetLayout, updatePreferences } from "./lib/bridge";
-import { needsFastRefresh, quotaTier } from "./lib/format";
+import { clampPercent, needsFastRefresh, quotaTier } from "./lib/format";
 import { checkForAppUpdate, openReleasePage } from "./lib/appUpdate";
 import { copy, normalizeLanguage } from "./lib/i18n";
 import { mergeSnapshots } from "./lib/snapshots";
 import { DESKTOP_PALETTES } from "./lib/desktopPalette";
 import { normalizeGlassStyle } from "./lib/glass";
+import { calculateQuotaPrediction, loadQuotaHistory, quotaHistoryKey, recordQuotaSample, saveQuotaHistory, type QuotaHistory } from "./lib/quotaPrediction";
 import type { ResizeEdge } from "./lib/resize";
 import type { CustomSkinAsset, PlatformCapabilities, ProviderSnapshot, ToggleCorner, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin, WidgetTheme } from "./types";
 
@@ -33,6 +34,7 @@ const INITIAL_SNAPSHOT: ProviderSnapshot = {
 
 export default function App() {
   const [snapshots, setSnapshots] = useState<ProviderSnapshot[]>([]);
+  const [quotaHistory, setQuotaHistory] = useState<QuotaHistory>(() => loadQuotaHistory());
   const [preferences, setPreferences] = useState(DEFAULT_PREFS);
   const [activeIndex, setActiveIndex] = useState(0);
   const [customSkinAsset, setCustomSkinAsset] = useState<CustomSkinAsset | null>(null);
@@ -225,11 +227,45 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [preferences.autoRotateSeconds, preferences.pinnedProvider, snapshots.length]);
 
+  useEffect(() => {
+    if (snapshots.length === 0) return;
+    const sampledAt = new Date();
+    setQuotaHistory((currentHistory) => {
+      let nextHistory = currentHistory;
+      for (const snapshot of snapshots) {
+        if (snapshot.status !== "ok") continue;
+        // The weekly window is the useful seven-day series for a forecast. If
+        // it is unavailable, the short window still gives the feature a
+        // meaningful fallback instead of silently disabling itself.
+        const window = snapshot.weeklyWindow ?? snapshot.shortWindow;
+        if (!window) continue;
+        const key = quotaHistoryKey(snapshot, window);
+        const nextPercent = clampPercent(window.remainingPercent);
+        const day = `${sampledAt.getFullYear()}-${String(sampledAt.getMonth() + 1).padStart(2, "0")}-${String(sampledAt.getDate()).padStart(2, "0")}`;
+        const existing = currentHistory[key]?.find((point) => point.day === day);
+        if (existing && existing.remainingPercent === nextPercent) continue;
+        nextHistory = recordQuotaSample(nextHistory, key, nextPercent, sampledAt);
+      }
+      if (nextHistory === currentHistory) return currentHistory;
+      saveQuotaHistory(nextHistory);
+      return nextHistory;
+    });
+  }, [snapshots]);
+
   const current = preferences.pinnedProvider
     ? snapshots.find((item) => item.provider === preferences.pinnedProvider) ?? snapshots[0] ?? INITIAL_SNAPSHOT
     : snapshots[activeIndex % Math.max(1, snapshots.length)] ?? INITIAL_SNAPSHOT;
 
   const primaryPercent = current?.shortWindow?.remainingPercent ?? current?.weeklyWindow?.remainingPercent ?? null;
+  const forecastWindow = current?.weeklyWindow ?? current?.shortWindow;
+  const prediction = useMemo(() => {
+    if (!forecastWindow || (current.status !== "ok" && current.status !== "stale")) return null;
+    return calculateQuotaPrediction(
+      clampPercent(forecastWindow.remainingPercent),
+      forecastWindow.resetsAt,
+      quotaHistory[quotaHistoryKey(current, forecastWindow)] ?? [],
+    );
+  }, [current, forecastWindow, quotaHistory]);
   const southwestWeeklyPrimary = !preferences.locked && skin !== "computer" && preferences.toggleCorner === "sw" && current?.shortWindow === null && current?.weeklyWindow !== null;
 
   useEffect(() => {
@@ -343,6 +379,7 @@ export default function App() {
       onResizeReset={() => resetResize("expanded")}
       resizeSize={preferences.expandedSize}
       onRefresh={() => refresh(true)}
+      prediction={prediction}
       theme={theme}
       skin={skin}
       glassStyle={preferences.glassStyle === "liquid" && !platformCapabilities.supportsLiquidGlass ? "dock" : preferences.glassStyle}

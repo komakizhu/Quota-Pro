@@ -188,7 +188,7 @@ describe("SettingsPanel live controls", () => {
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Quota Pro is up to date"));
     const openProject = vi.spyOn(window, "open").mockImplementation(() => null);
     fireEvent.click(screen.getByRole("button", { name: "Project address" }));
-    expect(openProject).toHaveBeenCalledWith("https://github.com/komakizhu/quota-float-switch", "_blank", "noopener,noreferrer");
+    expect(openProject).toHaveBeenCalledWith("https://github.com/komakizhu/Quota-Pro", "_blank", "noopener,noreferrer");
     openProject.mockRestore();
   });
 

@@ -1,8 +1,8 @@
 import { isTauri } from "./bridge";
 import type { Language } from "../types";
 
-export const RELEASE_URL = "https://github.com/komakizhu/quota-float-switch/releases/latest";
-export const PROJECT_URL = "https://github.com/komakizhu/quota-float-switch";
+export const RELEASE_URL = "https://github.com/komakizhu/Quota-Pro/releases/latest";
+export const PROJECT_URL = "https://github.com/komakizhu/Quota-Pro";
 
 export interface UpdateMessages {
   checking: string;

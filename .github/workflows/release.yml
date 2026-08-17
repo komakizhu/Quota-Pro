@@ -43,6 +43,28 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build macOS installer DMG with PKG and quarantine helper
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          npm run tauri build -- --target universal-apple-darwin
+      - name: Package macOS DMG contents
+        if: runner.os == 'macOS' && hashFiles('src-tauri/target/universal-apple-darwin/release/bundle/macos/Quota Pro.app/Contents/Info.plist') != ''
+        run: |
+          chmod +x scripts/build-macos-dmg.sh
+          scripts/build-macos-dmg.sh \
+            "src-tauri/target/universal-apple-darwin/release/bundle/macos/Quota Pro.app" \
+            "${GITHUB_REF_NAME#v}" \
+            "dist/release"
+      - name: Upload macOS installer DMG artifact
+        if: runner.os == 'macOS' && hashFiles('dist/release/*.dmg') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: quota-pro-macos-installer
+          path: dist/release/*.dmg
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

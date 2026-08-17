@@ -54,14 +54,22 @@ jobs:
             exit 1
           fi
           key_path="$RUNNER_TEMP/quota-pro-updater.key"
-          if base64 --help 2>&1 | grep -q -- '--decode'; then
-            printf '%s' "$TAURI_SIGNING_PRIVATE_KEY_B64" | base64 --decode > "$key_path"
+          if [[ "$TAURI_SIGNING_PRIVATE_KEY_B64" == untrusted\ comment:* ]]; then
+            # Accept a complete minisign key pasted directly into the secret.
+            printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY_B64" > "$key_path"
           else
-            printf '%s' "$TAURI_SIGNING_PRIVATE_KEY_B64" | base64 -D > "$key_path"
+            # The preferred format is Base64 of the complete .key file. Strip
+            # whitespace so both wrapped and single-line Base64 secrets work.
+            encoded_key=$(printf '%s' "$TAURI_SIGNING_PRIVATE_KEY_B64" | tr -d '[:space:]')
+            if base64 --help 2>&1 | grep -q -- '--decode'; then
+              printf '%s' "$encoded_key" | base64 --decode > "$key_path"
+            else
+              printf '%s' "$encoded_key" | base64 -D > "$key_path"
+            fi
           fi
           chmod 600 "$key_path"
           if ! grep -q '^untrusted comment:' "$key_path"; then
-            echo "TAURI_SIGNING_PRIVATE_KEY_B64 does not contain a complete Tauri/minisign private key" >&2
+            echo "TAURI_SIGNING_PRIVATE_KEY_B64 must be Base64 of the complete Tauri/minisign .key file (including its untrusted comment), or the complete key text" >&2
             exit 1
           fi
           echo "TAURI_SIGNING_PRIVATE_KEY=$key_path" >> "$GITHUB_ENV"

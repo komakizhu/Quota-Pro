@@ -50,24 +50,23 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
-          releaseName: Quota Float v__VERSION__
+          releaseName: Quota Pro v__VERSION__
           releaseBody: |
             ## What's new
 
-            - Refreshes Blur state artwork and corrects its control-button fill states.
-            - Makes the Default, Blur, and Computer skins permanently free.
-            - Removes outer card shadows while retaining the transparent-window safety inset.
-            - Adds a Chinese/English content switch to the design workbench, including widget preview copy.
-            - Keeps showing weekly quota when the 5-hour window is temporarily unavailable, with a clear `W` badge.
-            - Adds persistent expansion, clearer active controls, exact reset time, and localized tray actions.
-            - Adds automatic update checks and a safe GitHub Releases fallback link.
-            - Improves edge docking and transparent rounded-window rendering on Windows and macOS.
+            - Renames the application to Quota Pro and ships version 1.0.0.
+            - Adds manual compact/expanded switching with free positioning and persistent anchors.
+            - Adds independent compact/card sizing, edge and corner resize gestures, and double-click reset.
+            - Includes free Glass, Soft Light, and Computer skins plus custom skin import.
+            - Adds transparent, Dock Glass, and Liquid Glass material modes where supported.
+            - Keeps weekly quota visible when the 5-hour window is unavailable, with a clear `W` badge.
+            - Improves macOS text rendering, resize stability, localized settings, and automatic update checks.
 
-            ![Quota Float weekly quota fallback](https://raw.githubusercontent.com/change-42-yhmm/quota-float/main/docs/images/quota-v0.1.4-weekly-fallback.png)
+            ![Quota Pro weekly quota fallback](https://raw.githubusercontent.com/komakizhu/Quota-Pro/main/docs/images/quota-v0.1.4-weekly-fallback.png)
 
             ## Privacy
 
-            Quota Float remains local-first: it reads the existing Codex Desktop login state only for quota requests and does not upload prompts, chats, raw quota responses, or local credentials.
+            Quota Pro remains local-first: it reads the existing Codex Desktop login state only for quota requests and does not upload prompts, chats, raw quota responses, or local credentials.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

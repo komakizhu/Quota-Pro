@@ -31,7 +31,7 @@ jobs:
         run: |
           $package = Get-Content -Raw package.json | ConvertFrom-Json
           $expectedTag = "v$($package.version)"
-          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+          if ($env:GITHUB_REF_NAME -ne $expectedTag -and -not $env:GITHUB_REF_NAME.StartsWith("$expectedTag-")) {
             throw "Release tag '$env:GITHUB_REF_NAME' does not match package version '$expectedTag'."
           }
       - name: Install macOS universal targets
@@ -71,8 +71,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: v__VERSION__
-          releaseName: Quota Pro v__VERSION__
+          tagName: ${{ github.ref_name }}
+          releaseName: Quota Pro ${{ github.ref_name }}
           releaseBody: |
             ## What's new
 

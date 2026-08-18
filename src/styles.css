@@ -46,7 +46,7 @@ button { font: inherit; }
   isolation: isolate;
   user-select: none;
 }
-.quota-card { color: #17191f; }
+.quota-card { --forecast-value-color: #17191f; color: #17191f; }
 .quota-card { animation: none; }
 .quota-card-content {
   position: absolute;
@@ -132,6 +132,7 @@ button { font: inherit; }
 .quota-card--theme-dark .orb-unavailable { color: rgba(237,243,255,.76); border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.08); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 12px 32px rgba(0,0,0,.2); }
 .quota-card--theme-dark .error-refresh-button { border-color: rgba(169,208,255,.22); background: rgba(255,255,255,.08); box-shadow: 0 10px 24px rgba(0,0,0,.2); }
 .quota-card--theme-dark .error-refresh-button:hover { background: rgba(255,255,255,.14); }
+.quota-card--theme-dark { --forecast-value-color: #FFFFFF; }
 .quota-card--theme-dark .primary-metric { color: #FFFFFF; }
 
 .aurora {
@@ -208,6 +209,7 @@ button { font: inherit; }
 .reset-time { margin-top: calc(7px * var(--widget-scale)); font-size: calc(12px * var(--widget-scale)); color: rgba(17,20,27,.52); letter-spacing: .05em; }
 .quota-forecast { display: grid; gap: calc(2px * var(--widget-scale)); margin-top: calc(4px * var(--widget-scale)); max-width: 100%; color: rgba(17,20,27,.58); font-size: calc(10px * var(--widget-scale)); line-height: 1.3; letter-spacing: .015em; }
 .quota-forecast p { margin: 0; }
+.quota-forecast-value { color: var(--forecast-value-color); font-weight: 500; }
 
 .card-footer { position: absolute; left: calc(30px * var(--widget-scale)); right: calc(30px * var(--widget-scale)); bottom: calc(26px * var(--widget-scale)); display: flex; align-items: flex-end; justify-content: space-between; }
 .quota-card--toggle-sw-weekly-primary .card-footer { justify-content: flex-end; }
@@ -322,6 +324,7 @@ button { font: inherit; }
    semantic colours arrive as CSS variables from App after the validated asset
    is loaded; both modes use cover + centered cropping. */
 .quota-card--skin-custom {
+  --forecast-value-color: var(--custom-text-color, #fff);
   color: var(--custom-text-color, #fff);
   background-color: #374151;
   background-image: linear-gradient(var(--custom-skin-overlay, rgba(0,0,0,.4)), var(--custom-skin-overlay, rgba(0,0,0,.4))), var(--custom-skin-image);
@@ -353,7 +356,7 @@ button { font: inherit; }
 
 /* Glass changes only the surface and local contrast. The existing frame,
    radius, layout, and geometry remain authoritative. */
-.quota-card--skin-glass { color: #101820; background: transparent; border-color: rgba(255,255,255,.32); --glass-surface: rgba(255,255,255,.14); --glass-backdrop-blur: 0px; --glass-backdrop-saturation: 1; box-shadow: inset 0 1px 0 rgba(255,255,255,.52), inset 0 0 0 1px rgba(255,255,255,.18); }
+.quota-card--skin-glass { --forecast-value-color: #101820; color: #101820; background: transparent; border-color: rgba(255,255,255,.32); --glass-surface: rgba(255,255,255,.14); --glass-backdrop-blur: 0px; --glass-backdrop-saturation: 1; box-shadow: inset 0 1px 0 rgba(255,255,255,.52), inset 0 0 0 1px rgba(255,255,255,.18); }
 .quota-card--skin-glass::before { content: ""; position: absolute; z-index: 0; inset: 0; border-radius: inherit; background: var(--glass-surface); backdrop-filter: blur(var(--glass-backdrop-blur)) saturate(var(--glass-backdrop-saturation)); -webkit-backdrop-filter: blur(var(--glass-backdrop-blur)) saturate(var(--glass-backdrop-saturation)); pointer-events: none; }
 .quota-card--skin-glass::after { content: ""; position: absolute; z-index: 0; inset: 1px; border: 1px solid rgba(255,255,255,.24); border-radius: inherit; background: linear-gradient(135deg, rgba(255,255,255,.16), transparent 34%, transparent 68%, rgba(255,255,255,.06)); pointer-events: none; }
 .quota-card--skin-glass .aurora { display: none; }
@@ -379,7 +382,7 @@ button { font: inherit; }
 .quota-orb--skin-glass .orb-weekly-badge { color: #26619C; }
 .quota-orb--skin-glass .orb-weekly-badge svg { filter: drop-shadow(0 1px 2px rgba(29,78,122,.2)); }
 .quota-orb--skin-glass .orb-weekly-badge b { color: #FFFFFF; text-shadow: none; }
-.quota-card--skin-glass.quota-card--theme-dark { color: #f3f7ff; border-color: rgba(255,255,255,.24); box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 0 0 1px rgba(255,255,255,.08); }
+.quota-card--skin-glass.quota-card--theme-dark { --forecast-value-color: #f3f7ff; color: #f3f7ff; border-color: rgba(255,255,255,.24); box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 0 0 1px rgba(255,255,255,.08); }
 .quota-card--skin-glass.quota-card--theme-dark { --glass-surface: rgba(0,0,0,.16); }
 .quota-card--skin-glass.quota-card--theme-dark::after { border-color: rgba(255,255,255,.14); background: linear-gradient(135deg, rgba(255,255,255,.1), transparent 34%, transparent 68%, rgba(255,255,255,.03)); }
 .quota-card--skin-glass.quota-card--theme-dark .eyebrow,
@@ -432,7 +435,7 @@ button { font: inherit; }
 
 /* Computer is a CSS-built skin: the case, status stripe, display,
    and dot-matrix progress are responsive to the existing widget dimensions. */
-.quota-card--skin-computer { --computer-ink: #244f7b; --computer-screen: #b9d7eb; position: relative; border: 0; border-radius: 0; color: #20201d; background: url("../assets/computer-bg.svg") center / 100% 100% no-repeat; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.quota-card--skin-computer { --computer-ink: #244f7b; --forecast-value-color: var(--computer-ink); --computer-screen: #b9d7eb; position: relative; border: 0; border-radius: 0; color: #20201d; background: url("../assets/computer-bg.svg") center / 100% 100% no-repeat; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .quota-card--skin-computer.quota-card--caution { --computer-ink: #a46317; --computer-screen: #f3cd87; }
 .quota-card--skin-computer.quota-card--critical { --computer-ink: #a33030; --computer-screen: #f4b29f; }
 .quota-card--skin-computer .aurora { display: none; }

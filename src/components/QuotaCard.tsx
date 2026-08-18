@@ -94,6 +94,16 @@ function localizedBackendMessage(message: string | null, language: Language): st
   return message;
 }
 
+function renderForecastLine(line: { text: string; value: string }): ReactNode {
+  const valueStart = line.text.indexOf(line.value);
+  if (valueStart < 0) return <p>{line.text}</p>;
+  return <p>
+    {line.text.slice(0, valueStart)}
+    <strong className="quota-forecast-value">{line.value}</strong>
+    {line.text.slice(valueStart + line.value.length)}
+  </p>;
+}
+
 function ComputerProgress({ percent, label }: { percent: number; label: string }) {
   const segments = 34;
   const available = Math.round((Math.max(0, Math.min(100, percent)) / 100) * segments);
@@ -197,8 +207,8 @@ export const QuotaCard = memo(function QuotaCard({
     const days = number(prediction.daysAtAverage ?? prediction.daysUntilReset);
     if (!days && !daily) return null;
     return {
-      days: days ? t.forecastRemainingDays(days) : null,
-      daily: daily ? t.forecastDailyBudget(daily) : null,
+      days: days ? { text: t.forecastRemainingDays(days), value: days } : null,
+      daily: daily ? { text: t.forecastDailyBudget(daily), value: daily } : null,
     };
   }, [language, prediction, t]);
 
@@ -391,8 +401,8 @@ export const QuotaCard = memo(function QuotaCard({
                 : <div className="progress" role="progressbar" aria-label={displayingWeeklyAsPrimary ? t.weeklyAvailableLabel(displayPercent) : t.availableLabel(displayPercent)} aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayPercent}><span style={{ width: `${displayPercent}%` }} /></div>}
             <p className="reset-time">{formatResetTime(displayWindow?.resetsAt ?? null, new Date(), language)}{displayWindow?.resetsAt ? ` · ${formatDateTime(displayWindow.resetsAt, language)}` : ""}</p>
             {forecastText ? <div className="quota-forecast" aria-label={language === "en" ? "Quota forecast" : "额度预测"}>
-              {forecastText.days ? <p>{forecastText.days}</p> : null}
-              {forecastText.daily ? <p>{forecastText.daily}</p> : null}
+              {forecastText.days ? renderForecastLine(forecastText.days) : null}
+              {forecastText.daily ? renderForecastLine(forecastText.daily) : null}
             </div> : null}
             <footer className="card-footer">
               <div className="weekly-metric">

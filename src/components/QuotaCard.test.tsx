@@ -508,9 +508,12 @@ describe("QuotaCard resize gestures", () => {
       />,
     );
     const resetTime = screen.getByText(/resets in|Reset time unknown/);
-    const forecast = screen.getByText("Remaining quota can last 4.2 days");
-    expect(resetTime.nextElementSibling).toBe(forecast.parentElement);
-    expect(screen.getByText("Recommended daily usage: 16.7%")).toBeTruthy();
+    const forecast = screen.getByLabelText("Quota forecast");
+    expect(resetTime.nextElementSibling).toBe(forecast);
+    expect(forecast.textContent).toContain("Remaining quota can last 4.2 days");
+    expect(forecast.textContent).toContain("Recommended daily usage: 16.7%");
+    expect(screen.getByText("4.2").className).toContain("quota-forecast-value");
+    expect(screen.getByText("16.7").className).toContain("quota-forecast-value");
   });
 
   it("starts moving from the card header instead of treating the contents wrapper as a resize box", () => {

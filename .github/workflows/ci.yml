@@ -14,7 +14,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test -- --maxWorkers=1 --minWorkers=1
+      - run: npm test -- --pool=forks --maxWorkers=1 --minWorkers=1
       - run: npm run build
       - run: npm audit --audit-level=high
 

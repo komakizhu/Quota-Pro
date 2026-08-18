@@ -72,7 +72,12 @@ jobs:
             echo "TAURI_SIGNING_PRIVATE_KEY_B64 must be Base64 of the complete Tauri/minisign .key file (including its untrusted comment), or the complete key text" >&2
             exit 1
           fi
-          echo "TAURI_SIGNING_PRIVATE_KEY=$key_path" >> "$GITHUB_ENV"
+          # Tauri CLI and tauri-action both consume this value as the Base64
+          # contents of the complete minisign key. Keep the decoded file only
+          # for validation; passing its runner-specific path breaks the final
+          # updater-signing step on Windows (the action tries to Base64-decode
+          # the path itself).
+          echo "TAURI_SIGNING_PRIVATE_KEY=$encoded_key" >> "$GITHUB_ENV"
       - name: Build macOS installer DMG with PKG and quarantine helper
         if: runner.os == 'macOS'
         continue-on-error: true

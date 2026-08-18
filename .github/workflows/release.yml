@@ -41,7 +41,7 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
-      - run: npm test
+      - run: npm test -- --maxWorkers=1 --minWorkers=1
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Prepare Tauri updater signing key
         shell: bash

@@ -1,5 +1,6 @@
 import type { CustomSkinAsset, CustomSkinMetadata, PlatformCapabilities, ProviderSnapshot, SkinTextTone, WidgetMode, WidgetPreferences, WidgetSize } from "../types";
 import type { ResizeEdge } from "./resize";
+import { invoke as nativeInvoke } from "@tauri-apps/api/core";
 
 export type { CustomSkinAsset, CustomSkinMetadata, SkinTextTone } from "../types";
 
@@ -281,12 +282,11 @@ async function drainWidgetResizePreviews(): Promise<void> {
   resizePreviewRunning = true;
   resizePreviewDrain = (async () => {
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
       while (resizePreviewLatest !== null) {
         const size = resizePreviewLatest;
         resizePreviewLatest = null;
         if (size === resizePreviewLastDispatched) continue;
-        await invoke("preview_widget_resize", { size });
+        await nativeInvoke("preview_widget_resize", { size });
         resizePreviewLastDispatched = size;
       }
     } finally {

@@ -21,12 +21,26 @@ const api = vi.hoisted(() => ({
   }),
 }));
 
+async function waitForCall(call: string, occurrence = 1, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (api.calls.filter((entry) => entry === call).length < occurrence) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for ${call} (calls: ${api.calls.join(", ")})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
+
 vi.mock("@tauri-apps/api/core", () => ({ invoke: api.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: api.listen }));
 vi.mock("@tauri-apps/api/window", () => ({ currentMonitor: api.currentMonitor, getCurrentWindow: () => api.currentWindow }));
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // Each test imports bridge lazily, so reset its module-level resize queue as
+  // well as the mock call history. This prevents a rejected in-flight preview
+  // from blocking a later test if an assertion fails early.
+  vi.resetModules();
+  vi.resetAllMocks();
   api.calls.length = 0;
   api.eventHandlers.clear();
   vi.stubGlobal("window", {
@@ -110,7 +124,6 @@ describe("widget transitions", () => {
     await beginWidgetResize("compact", "se");
     previewWidgetResize(96);
     await finishWidgetResize("compact", 96);
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(api.invoke).toHaveBeenCalledWith("begin_widget_resize", {
       mode: "compact",
       edge: "se",
@@ -132,10 +145,8 @@ describe("widget transitions", () => {
     api.calls.length = 0;
     previewWidgetResize(96);
     previewWidgetResize(96);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    // The first preview lazily imports the Tauri core module; give that
-    // promise and the single-flight drain a second turn before asserting.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForCall("start:preview_widget_resize");
+    await waitForCall("end:preview_widget_resize");
 
     expect(api.invoke).toHaveBeenCalledTimes(1);
     expect(api.invoke).toHaveBeenCalledWith("preview_widget_resize", { size: 96 });
@@ -165,14 +176,14 @@ describe("widget transitions", () => {
     });
 
     previewWidgetResize(96);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForCall("start:preview_widget_resize");
     previewWidgetResize(112);
     expect(api.calls).toEqual(["start:preview_widget_resize"]);
 
     releaseFirst();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForCall("end:preview_widget_resize");
+    await waitForCall("start:preview_widget_resize", 2);
+    await waitForCall("end:preview_widget_resize", 2);
     expect(api.calls).toEqual([
       "start:preview_widget_resize",
       "end:preview_widget_resize",
@@ -194,10 +205,9 @@ describe("widget transitions", () => {
     });
 
     previewWidgetResize(96);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForCall("start:preview_widget_resize");
     expect(rejectPreview).toBeTypeOf("function");
     const cancellation = cancelWidgetResize();
-    await Promise.resolve();
     rejectPreview(new Error("preview failed"));
 
     await expect(cancellation).resolves.toBeUndefined();

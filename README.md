@@ -1,6 +1,6 @@
 # Quota Pro
 
-Quota Pro 是一个 Windows/macOS 桌面悬浮工具，用来在桌面上持续显示 Codex 的额度、重置时间和状态。当前版本为 `1.1.1`，应用名称为 **Quota Pro**。
+Quota Pro 是一个 Windows/macOS 桌面悬浮工具，用来在桌面上持续显示 Codex 的额度、重置时间和状态。当前版本为 `1.1.2`，应用名称为 **Quota Pro**。
 
 ## 项目来源
 

@@ -17,6 +17,7 @@ const basePreferences: WidgetPreferences = {
   autoRotateSeconds: 12,
   autoCheckUpdates: true,
   showMenuBarIcon: true,
+  showDockIcon: true,
   language: "en",
   appearance: "system",
   selectedSkin: "default",
@@ -66,7 +67,7 @@ beforeEach(() => {
   bridge.updatePreferences.mockImplementation(async (value: WidgetPreferences) => { bridge.preferences = structuredClone(value); });
   bridge.getLaunchAtLogin.mockResolvedValue(false);
   bridge.getAppVersion.mockResolvedValue("1.1.0");
-  bridge.getPlatformCapabilities.mockResolvedValue({ nativeGlass: true, supportsLiquidGlass: false });
+  bridge.getPlatformCapabilities.mockResolvedValue({ nativeGlass: true, supportsLiquidGlass: false, canHideDockIcon: true });
   bridge.setLaunchAtLogin.mockImplementation(async (enabled: boolean) => enabled);
   bridge.setAlwaysOnTop.mockImplementation(async (value: boolean) => ({ ...bridge.preferences, alwaysOnTop: value }));
   bridge.setClickThrough.mockImplementation(async (value: boolean) => ({ ...bridge.preferences, locked: value }));
@@ -101,6 +102,19 @@ async function renderSettings(preferences: WidgetPreferences = basePreferences) 
 }
 
 describe("SettingsPanel live controls", () => {
+  it("hides the Dock icon on macOS while keeping the menu bar entry available", async () => {
+    await renderSettings();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show Dock icon" }));
+    await waitFor(() => expect(bridge.updatePreferences).toHaveBeenCalledWith(expect.objectContaining({ showDockIcon: false })));
+    expect(screen.getByRole("checkbox", { name: "Show menu bar icon" })).toBeDisabled();
+  });
+
+  it("does not show a Dock control on platforms without Dock support", async () => {
+    bridge.getPlatformCapabilities.mockResolvedValueOnce({ nativeGlass: false, supportsLiquidGlass: false, canHideDockIcon: false });
+    await renderSettings();
+    expect(screen.queryByRole("checkbox", { name: "Show Dock icon" })).toBeNull();
+  });
+
   it("keeps the three sidebar destinations in keyboard focus order and exposes every settings group", async () => {
     await renderSettings({ ...basePreferences, selectedSkin: "glass" });
 
@@ -111,6 +125,7 @@ describe("SettingsPanel live controls", () => {
     expect(screen.getByRole("combobox", { name: "Language" })).toHaveValue("en");
     expect(screen.getByRole("checkbox", { name: "Launch at login" })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Show menu bar icon" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Show Dock icon" })).toBeChecked();
     expect(screen.getByRole("spinbutton", { name: "Auto-rotation interval" })).toHaveValue(12);
 
     fireEvent.click(screen.getByRole("button", { name: "Widget" }));
@@ -140,7 +155,7 @@ describe("SettingsPanel live controls", () => {
   });
 
   it("enables native Liquid Glass only when the platform reports support", async () => {
-    bridge.getPlatformCapabilities.mockResolvedValueOnce({ nativeGlass: true, supportsLiquidGlass: true });
+    bridge.getPlatformCapabilities.mockResolvedValueOnce({ nativeGlass: true, supportsLiquidGlass: true, canHideDockIcon: true });
     await renderSettings({ ...basePreferences, selectedSkin: "glass" });
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
     const liquid = screen.getByRole("radio", { name: "Liquid Glass" });

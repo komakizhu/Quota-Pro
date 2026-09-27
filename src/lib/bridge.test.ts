@@ -270,10 +270,10 @@ describe("custom skin bridge", () => {
 
 describe("settings window bridge stubs", () => {
   it("reads native glass capabilities", async () => {
-    api.invoke.mockResolvedValueOnce({ nativeGlass: true, supportsLiquidGlass: false } as never);
+    api.invoke.mockResolvedValueOnce({ nativeGlass: true, supportsLiquidGlass: false, canHideDockIcon: true } as never);
     const { getPlatformCapabilities } = await import("./bridge");
 
-    await expect(getPlatformCapabilities()).resolves.toEqual({ nativeGlass: true, supportsLiquidGlass: false });
+    await expect(getPlatformCapabilities()).resolves.toEqual({ nativeGlass: true, supportsLiquidGlass: false, canHideDockIcon: true });
     expect(api.invoke).toHaveBeenCalledWith("get_platform_capabilities");
   });
 
@@ -281,7 +281,7 @@ describe("settings window bridge stubs", () => {
     vi.stubGlobal("window", {});
     const { getPlatformCapabilities } = await import("./bridge");
 
-    await expect(getPlatformCapabilities()).resolves.toEqual({ nativeGlass: false, supportsLiquidGlass: false });
+    await expect(getPlatformCapabilities()).resolves.toEqual({ nativeGlass: false, supportsLiquidGlass: false, canHideDockIcon: false });
     expect(api.invoke).not.toHaveBeenCalled();
   });
 

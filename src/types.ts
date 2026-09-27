@@ -28,6 +28,7 @@ export interface CustomSkinAsset {
 export interface PlatformCapabilities {
   nativeGlass: boolean;
   supportsLiquidGlass: boolean;
+  canHideDockIcon: boolean;
 }
 
 export interface UsageWindow {
@@ -62,6 +63,7 @@ export interface WidgetPreferences {
   autoRotateSeconds: number;
   autoCheckUpdates: boolean;
   showMenuBarIcon: boolean;
+  showDockIcon: boolean;
   language: Language;
   appearance: AppearancePreference;
   selectedSkin: string;

@@ -37,6 +37,7 @@ const preferences: WidgetPreferences = {
   autoRotateSeconds: 12,
   autoCheckUpdates: true,
   showMenuBarIcon: true,
+  showDockIcon: true,
   language: "en",
   appearance: "light",
   selectedSkin: "default",

@@ -3,7 +3,7 @@ import type { ResizeEdge } from "./resize";
 
 export type { CustomSkinAsset, CustomSkinMetadata, SkinTextTone } from "../types";
 
-const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: null, autoRotateSeconds: 12, autoCheckUpdates: true, showMenuBarIcon: true, language: "zh-CN", appearance: "light", selectedSkin: "glass", glassStyle: "dock", customSkins: [] };
+const defaultPreferences: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: null, autoRotateSeconds: 12, autoCheckUpdates: true, showMenuBarIcon: true, showDockIcon: true, language: "zh-CN", appearance: "light", selectedSkin: "glass", glassStyle: "dock", customSkins: [] };
 
 function widgetSizeMarker(compactSize: number, expandedSize: number): WidgetSize {
   const presets: Array<[WidgetSize, number, number]> = [
@@ -64,7 +64,7 @@ export async function getPreferences(): Promise<WidgetPreferences> {
 }
 
 export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
-  if (!isTauri()) return { nativeGlass: false, supportsLiquidGlass: false };
+  if (!isTauri()) return { nativeGlass: false, supportsLiquidGlass: false, canHideDockIcon: false };
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<PlatformCapabilities>("get_platform_capabilities");
 }

@@ -54,6 +54,7 @@ const LAUNCH_AT_LOGIN_CHANGED_EVENT: &str = "launch-at-login-changed";
 struct PlatformCapabilities {
     native_glass: bool,
     supports_liquid_glass: bool,
+    can_hide_dock_icon: bool,
 }
 
 #[cfg(target_os = "macos")]
@@ -96,6 +97,7 @@ fn get_platform_capabilities() -> PlatformCapabilities {
         // Glass remains separately gated to macOS 26+.
         native_glass: supports_native_dock_runtime(),
         supports_liquid_glass: supports_liquid_glass_runtime(),
+        can_hide_dock_icon: cfg!(target_os = "macos"),
     }
 }
 
@@ -277,6 +279,35 @@ fn set_tray_visibility(app: &AppHandle, visible: bool) -> Result<(), String> {
     tray.set_visible(visible)
         .map_err(|error| format!("failed to set menu bar icon visibility: {error}"))
 }
+
+#[cfg(target_os = "macos")]
+fn set_dock_visibility(app: &AppHandle, visible: bool) -> Result<(), String> {
+    app.set_dock_visibility(visible)
+        .map_err(|error| format!("failed to set Dock icon visibility: {error}"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_dock_visibility(_app: &AppHandle, _visible: bool) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn retry_dock_hide_after_macos_transition(app: AppHandle) {
+    // macOS may ignore a hide immediately after showing the Dock icon.
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        if let Some(state) = app.try_state::<AppState>() {
+            if !preferences_lock(state.inner()).show_dock_icon {
+                if let Err(error) = set_dock_visibility(&app, false) {
+                    eprintln!("{error}");
+                }
+            }
+        }
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn retry_dock_hide_after_macos_transition(_app: AppHandle) {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SettingsMenuRoute {
@@ -3380,8 +3411,19 @@ fn set_preferences(
     let current = preferences_lock(&state).clone();
     let preferences = renderer_preferences(&current, preferences);
     persist_preferences(&state.preferences_path, &preferences)?;
+    if current.show_dock_icon != preferences.show_dock_icon {
+        if let Err(error) = set_dock_visibility(&app, preferences.show_dock_icon) {
+            if let Err(rollback_error) = persist_preferences(&state.preferences_path, &current) {
+                eprintln!("failed to roll back Dock icon preference: {rollback_error}");
+            }
+            return Err(error);
+        }
+    }
     if current.show_menu_bar_icon != preferences.show_menu_bar_icon {
         if let Err(error) = set_tray_visibility(&app, preferences.show_menu_bar_icon) {
+            if current.show_dock_icon != preferences.show_dock_icon {
+                let _ = set_dock_visibility(&app, current.show_dock_icon);
+            }
             if let Err(rollback_error) = persist_preferences(&state.preferences_path, &current) {
                 eprintln!("failed to roll back menu bar icon preference: {rollback_error}");
             }
@@ -3389,6 +3431,9 @@ fn set_preferences(
         }
     }
     *preferences_lock(&state) = preferences.clone();
+    if current.show_dock_icon && !preferences.show_dock_icon {
+        retry_dock_hide_after_macos_transition(app.clone());
+    }
     if let Some(window) = app.get_webview_window("widget") {
         sync_native_glass_material(&window, &preferences);
     }
@@ -4364,10 +4409,16 @@ pub fn run() {
                     let _ = set_widget_mode_internal(mode, None, app.handle(), state.inner(), None);
                 }
             }
-            if setup_tray(app).is_err() {
+            let tray_ready = setup_tray(app).is_ok();
+            if !tray_ready {
                 eprintln!("tray setup failed; enabling taskbar fallback");
                 if let Some(window) = app.get_webview_window("widget") {
                     let _ = window.set_skip_taskbar(false);
+                }
+            }
+            if !preferences.show_dock_icon && tray_ready {
+                if let Err(error) = set_dock_visibility(app.handle(), false) {
+                    eprintln!("{error}");
                 }
             }
             if preferences.locked {

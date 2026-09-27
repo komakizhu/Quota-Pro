@@ -123,9 +123,9 @@ jobs:
           releaseBody: |
             ## What's new
 
-            - Ships Quota Pro 1.1.1 with an optional menu bar icon visibility setting in Settings → General.
-            - Keeps the menu bar icon visible by default while persisting the user's choice across launches.
-            - Rolls back the saved preference if the native menu bar visibility update fails.
+            - Adds an optional macOS Dock icon visibility setting in Settings → General.
+            - Remembers Dock and menu bar icon choices across launches while keeping at least one entry point available.
+            - Restores the previous preference if a native icon visibility update fails.
 
             ![Quota Pro weekly quota fallback](https://raw.githubusercontent.com/komakizhu/Quota-Pro/main/docs/images/quota-v0.1.4-weekly-fallback.png)
 

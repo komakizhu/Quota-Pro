@@ -88,6 +88,8 @@ pub struct WidgetPreferences {
     pub auto_check_updates: bool,
     #[serde(default = "default_show_menu_bar_icon")]
     pub show_menu_bar_icon: bool,
+    #[serde(default = "default_show_dock_icon")]
+    pub show_dock_icon: bool,
     #[serde(default = "default_language")]
     pub language: String,
     #[serde(default = "default_appearance")]
@@ -112,6 +114,9 @@ fn default_auto_check_updates() -> bool {
     true
 }
 fn default_show_menu_bar_icon() -> bool {
+    true
+}
+fn default_show_dock_icon() -> bool {
     true
 }
 fn default_appearance() -> String {
@@ -189,6 +194,7 @@ impl Default for WidgetPreferences {
             auto_rotate_seconds: 12,
             auto_check_updates: default_auto_check_updates(),
             show_menu_bar_icon: default_show_menu_bar_icon(),
+            show_dock_icon: default_show_dock_icon(),
             language: default_language(),
             appearance: default_appearance(),
             selected_skin: default_skin(),
@@ -228,6 +234,10 @@ impl WidgetPreferences {
             self.toggle_corner = default_toggle_corner();
         }
         self.stay_expanded = false;
+        // Keep a native entry point available even when the widget is locked.
+        if !self.show_menu_bar_icon && !self.show_dock_icon {
+            self.show_menu_bar_icon = true;
+        }
         self.auto_rotate_seconds = self.auto_rotate_seconds.clamp(5, 300);
         if self.pinned_provider.as_deref() != Some("codex") {
             self.pinned_provider = None;
@@ -323,6 +333,22 @@ mod tests {
             .insert("showMenuBarIcon".into(), json!(false));
         let parsed: WidgetPreferences = serde_json::from_value(raw).unwrap();
         assert!(!parsed.normalized().show_menu_bar_icon);
+    }
+
+    #[test]
+    fn dock_icon_defaults_to_visible_and_one_native_entry_point_remains() {
+        let parsed: WidgetPreferences =
+            serde_json::from_value(legacy_preferences("glass")).unwrap();
+        assert!(parsed.normalized().show_dock_icon);
+
+        let mut preferences = WidgetPreferences {
+            show_menu_bar_icon: false,
+            show_dock_icon: false,
+            ..WidgetPreferences::default()
+        };
+        preferences = preferences.normalized();
+        assert!(preferences.show_menu_bar_icon);
+        assert!(!preferences.show_dock_icon);
     }
 
     #[test]

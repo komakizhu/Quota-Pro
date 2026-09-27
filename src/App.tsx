@@ -11,7 +11,7 @@ import { assignLegacyQuotaHistoryToScope, calculateQuotaPrediction, loadQuotaHis
 import type { ResizeEdge } from "./lib/resize";
 import type { CustomSkinAsset, PlatformCapabilities, ProviderSnapshot, ToggleCorner, WidgetMode, WidgetPreferences, WidgetSize, WidgetSkin, WidgetTheme } from "./types";
 
-const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: null, autoRotateSeconds: 12, autoCheckUpdates: true, showMenuBarIcon: true, language: "zh-CN", appearance: "light", selectedSkin: "glass", glassStyle: "dock", customSkins: [] };
+const DEFAULT_PREFS: WidgetPreferences = { locked: false, alwaysOnTop: true, widgetMode: "compact", widgetSize: "medium", compactSize: 72, expandedSize: 306, toggleCorner: "ne", pinnedProvider: null, autoRotateSeconds: 12, autoCheckUpdates: true, showMenuBarIcon: true, showDockIcon: true, language: "zh-CN", appearance: "light", selectedSkin: "glass", glassStyle: "dock", customSkins: [] };
 const DEFAULT_COMPACT_SIZE = 72;
 const DEFAULT_EXPANDED_SIZE = 306;
 const COMPACT_MIN_SIZE = 48;
@@ -59,7 +59,7 @@ export default function App() {
   const [operationError, setOperationError] = useState<string | null>(null);
   const [pendingWidgetMode, setPendingWidgetMode] = useState<WidgetMode | null>(null);
   const [showUpdateFallback, setShowUpdateFallback] = useState(false);
-  const [platformCapabilities, setPlatformCapabilities] = useState<PlatformCapabilities>({ nativeGlass: false, supportsLiquidGlass: false });
+  const [platformCapabilities, setPlatformCapabilities] = useState<PlatformCapabilities>({ nativeGlass: false, supportsLiquidGlass: false, canHideDockIcon: false });
   const [systemDark, setSystemDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
   const failures = useRef(0);
   const language = normalizeLanguage(preferences.language);
@@ -168,6 +168,7 @@ export default function App() {
       widgetSize,
       autoCheckUpdates: typeof value.autoCheckUpdates === "boolean" ? value.autoCheckUpdates : true,
       showMenuBarIcon: typeof value.showMenuBarIcon === "boolean" ? value.showMenuBarIcon : true,
+      showDockIcon: typeof value.showDockIcon === "boolean" ? value.showDockIcon : true,
       compactSize: Math.min(COMPACT_MAX_SIZE, Math.max(COMPACT_MIN_SIZE, compactSize)),
       expandedSize: Math.min(EXPANDED_MAX_SIZE, Math.max(EXPANDED_MIN_SIZE, expandedSize)),
       toggleCorner: (value.toggleCorner === "nw" || value.toggleCorner === "ne" || value.toggleCorner === "sw" || value.toggleCorner === "se" ? value.toggleCorner : "ne") as ToggleCorner,
